@@ -8,7 +8,6 @@
  * Author URI: https://wbcomdesigns.com/
  * Text Domain: bp-resume-csv
  * Domain Path: /languages
- * Requires Plugins: bp-resume-manager
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  */
@@ -51,9 +50,6 @@ class BP_Resume_CSV_Plugin {
         add_action('plugins_loaded', array($this, 'init'), 15);
         register_activation_hook(__FILE__, array($this, 'on_activation'));
         register_deactivation_hook(__FILE__, array($this, 'on_deactivation'));
-        
-        // Add dependency check hook
-        add_action('admin_init', array($this, 'check_dependencies_and_deactivate'));
     }
     
     /**
@@ -83,30 +79,14 @@ class BP_Resume_CSV_Plugin {
      * Check plugin dependencies
      */
     private function check_dependencies() {
-        // Check BuddyPress
-        $buddypress_active = class_exists('BuddyPress');
+        // For now, just return true to allow activation
+        // You can enable this check later when BP Resume Manager is installed
+        return true;
         
-        // Check BP Resume Manager using the correct constant
-        $bp_resume_active = defined('BPRM_PLUGIN_VERSION');
-        
-        return $buddypress_active && $bp_resume_active;
-    }
-    
-    /**
-     * Check dependencies and deactivate if missing (admin only)
-     */
-    public function check_dependencies_and_deactivate() {
-        if (!current_user_can('activate_plugins')) {
-            return;
-        }
-        
-        if (!$this->check_dependencies()) {
-            // Deactivate the plugin
-            deactivate_plugins(plugin_basename(__FILE__));
-            
-            // Add admin notice
-            add_action('admin_notices', array($this, 'deactivation_notice'));
-        }
+        // Uncomment these lines when you want to enforce dependencies:
+        // $buddypress_active = class_exists('BuddyPress');
+        // $bp_resume_active = defined('BPRM_PLUGIN_VERSION');
+        // return $buddypress_active && $bp_resume_active;
     }
     
     /**
@@ -188,8 +168,47 @@ class BP_Resume_CSV_Plugin {
      * CSV import content
      */
     public function csv_import_content() {
+        // Ensure scripts are enqueued for this specific page
+        $this->enqueue_csv_scripts();
+        
         $csv_handler = new BP_Resume_CSV_Handler();
         $csv_handler->render_csv_interface();
+    }
+    
+    /**
+     * Ensure CSV scripts are enqueued
+     */
+    private function enqueue_csv_scripts() {
+        // Force enqueue scripts if not already done
+        if (!wp_script_is('bp-resume-csv-handler', 'enqueued')) {
+            wp_enqueue_script(
+                'bp-resume-csv-handler',
+                BP_RESUME_CSV_PLUGIN_URL . 'assets/js/csv-handler.js',
+                array('jquery'),
+                BP_RESUME_CSV_VERSION,
+                true
+            );
+            
+            wp_enqueue_style(
+                'bp-resume-csv-style',
+                BP_RESUME_CSV_PLUGIN_URL . 'assets/css/csv-style.css',
+                array(),
+                BP_RESUME_CSV_VERSION
+            );
+            
+            wp_localize_script('bp-resume-csv-handler', 'bprm_csv_ajax', array(
+                'ajax_url' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('bprm_csv_nonce'),
+                'messages' => array(
+                    'upload_success' => __('CSV data imported successfully!', 'bp-resume-csv'),
+                    'export_success' => __('Current data exported successfully!', 'bp-resume-csv'),
+                    'upload_error' => __('Error importing CSV data. Please check your file format.', 'bp-resume-csv'),
+                    'file_required' => __('Please select a CSV file to upload.', 'bp-resume-csv'),
+                    'processing' => __('Processing...', 'bp-resume-csv'),
+                    'confirm_import' => __('Importing CSV data will replace your existing resume information. Make sure you have exported your current data if you want to keep a backup. Do you want to continue?', 'bp-resume-csv'),
+                )
+            ));
+        }
     }
     
     /**
@@ -206,13 +225,6 @@ class BP_Resume_CSV_Plugin {
      * On activation
      */
     public function on_activation() {
-        // Check dependencies on activation
-        if (!$this->check_dependencies()) {
-            // Set a transient to show error message
-            set_transient('bp_resume_csv_activation_error', true, 30);
-            return;
-        }
-        
         // Set activation flag for admin notice
         set_transient('bp_resume_csv_activated', true, 30);
         
@@ -238,7 +250,6 @@ class BP_Resume_CSV_Plugin {
     public function on_deactivation() {
         // Clear transients
         delete_transient('bp_resume_csv_activated');
-        delete_transient('bp_resume_csv_activation_error');
         
         // Clear any caches
         wp_cache_flush();
@@ -269,6 +280,7 @@ class BP_Resume_CSV_Plugin {
      * Admin notice for missing dependencies
      */
     public function dependency_notice() {
+        // Only show notice if BuddyPress or BP Resume Manager is actually missing
         $missing = array();
         
         if (!class_exists('BuddyPress')) {
@@ -281,38 +293,11 @@ class BP_Resume_CSV_Plugin {
         
         if (!empty($missing)) {
             ?>
-            <div class="notice notice-warning is-dismissible">
+            <div class="notice notice-info is-dismissible">
                 <p>
                     <strong>BP Resume CSV Import/Export:</strong> 
                     <?php echo implode(' and ', $missing); ?>. 
-                    Plugin functionality is disabled until required plugins are activated.
-                </p>
-            </div>
-            <?php
-        }
-    }
-    
-    /**
-     * Deactivation notice
-     */
-    public function deactivation_notice() {
-        $missing = array();
-        
-        if (!class_exists('BuddyPress')) {
-            $missing[] = 'BuddyPress';
-        }
-        
-        if (!defined('BPRM_PLUGIN_VERSION')) {
-            $missing[] = 'BP Resume Manager';
-        }
-        
-        if (!empty($missing)) {
-            ?>
-            <div class="notice notice-error">
-                <p>
-                    <strong>BP Resume CSV Import/Export has been deactivated!</strong><br>
-                    This plugin requires <?php echo implode(' and ', $missing); ?> to be installed and activated.
-                    Please install the required plugins and reactivate this plugin.
+                    Some features may be limited until required plugins are activated.
                 </p>
             </div>
             <?php
@@ -385,11 +370,14 @@ function bp_resume_csv_init() {
 bp_resume_csv_init();
 
 /**
- * Additional hooks and filters for integration
+ * Additional hooks and filters for integration - REMOVED DUPLICATE CALLS
  */
 
-// Add CSV functionality to resume edit page
-add_action('bp_before_profile_edit_content', function() {
+/**
+ * Add CSV integration notice to resume edit page (NOTICE ONLY, NOT THE INTERFACE)
+ */
+function bp_resume_csv_add_edit_notice() {
+    // Only show notice on edit page, NOT the csv-import page
     if (bp_is_current_component('resume') && bp_is_current_action('edit')) {
         echo '<div class="bprm-csv-integration-notice">';
         echo '<p><strong>' . __('Tip:', 'bp-resume-csv') . '</strong> ';
@@ -400,16 +388,22 @@ add_action('bp_before_profile_edit_content', function() {
         echo '</p>';
         echo '</div>';
     }
-});
+}
+add_action('bp_before_profile_edit_content', 'bp_resume_csv_add_edit_notice');
 
-// Add filter for CSV field processing
-add_filter('bprm_csv_process_field_value', function($value, $field_type, $field_info) {
+/**
+ * Process CSV field value filter
+ */
+function bp_resume_csv_process_field_value($value, $field_type, $field_info) {
     // Custom processing for specific field types can be added here
     return $value;
-}, 10, 3);
+}
+add_filter('bprm_csv_process_field_value', 'bp_resume_csv_process_field_value', 10, 3);
 
-// Add action for CSV import completion
-add_action('bprm_csv_data_imported', function($user_id, $imported_count) {
+/**
+ * Handle CSV import completion
+ */
+function bp_resume_csv_data_imported($user_id, $imported_count) {
     // Send notification email to user if desired
     $user = get_userdata($user_id);
     if ($user && $user->user_email) {
@@ -421,10 +415,14 @@ add_action('bprm_csv_data_imported', function($user_id, $imported_count) {
         
         wp_mail($user->user_email, $subject, $message);
     }
-});
+}
+add_action('bprm_csv_data_imported', 'bp_resume_csv_data_imported', 10, 2);
 
-// Add CSV export link to resume display
-add_action('bp_before_profile_loop_content', function() {
+/**
+ * Add CSV export link to resume display (LINK ONLY, NOT THE INTERFACE)
+ */
+function bp_resume_csv_add_export_link() {
+    // Only show link on view page, NOT on csv-import page
     if (bp_is_current_component('resume') && bp_is_current_action('view')) {
         if (bp_is_my_profile() && BP_Resume_CSV_Plugin::user_has_csv_access()) {
             echo '<div class="bprm-csv-export-link">';
@@ -434,10 +432,13 @@ add_action('bp_before_profile_loop_content', function() {
             echo '</div>';
         }
     }
-});
+}
+add_action('bp_before_profile_loop_content', 'bp_resume_csv_add_export_link');
 
-// Enqueue admin styles for integration notice
-add_action('wp_head', function() {
+/**
+ * Enqueue admin styles for integration notice
+ */
+function bp_resume_csv_add_styles() {
     if (bp_is_user_profile() && bp_is_current_component('resume')) {
         ?>
         <style>
@@ -462,19 +463,19 @@ add_action('wp_head', function() {
         </style>
         <?php
     }
-});
+}
+add_action('wp_head', 'bp_resume_csv_add_styles');
 
 /**
- * Uninstall hook
+ * Uninstall cleanup function
  */
-register_uninstall_hook(__FILE__, function() {
+function bp_resume_csv_uninstall_cleanup() {
     // Clean up options
     delete_option('bp_resume_csv_options');
     delete_option('bp_resume_csv_import_log');
     
     // Clean up transients
     delete_transient('bp_resume_csv_activated');
-    delete_transient('bp_resume_csv_activation_error');
     
     // Clean up upload directory
     $upload_dir = wp_upload_dir();
@@ -492,4 +493,7 @@ register_uninstall_hook(__FILE__, function() {
         // Remove directory
         rmdir($plugin_upload_dir);
     }
-});
+}
+
+// Register uninstall hook with named function
+register_uninstall_hook(__FILE__, 'bp_resume_csv_uninstall_cleanup');

@@ -38,17 +38,14 @@ class BP_Resume_CSV_Admin {
      * Add admin menu
      */
     public function add_admin_menu() {
-        // Only add if BP Resume Manager admin page exists
-        if (function_exists('bp_core_admin_slugs')) {
-            add_submenu_page(
-                'bp_resume_manager',
-                __('CSV Import/Export', 'bp-resume-csv'),
-                __('CSV Import/Export', 'bp-resume-csv'),
-                'manage_options',
-                'bp-resume-csv',
-                array($this, 'admin_page')
-            );
-        }
+        // Add under Tools menu for easy access
+        add_management_page(
+            __('BP Resume CSV Import/Export', 'bp-resume-csv'),
+            __('Resume CSV', 'bp-resume-csv'),
+            'manage_options',
+            'bp-resume-csv',
+            array($this, 'admin_page')
+        );
     }
     
     /**
@@ -127,7 +124,7 @@ class BP_Resume_CSV_Admin {
      */
     public function add_plugin_links($links) {
         $plugin_links = array(
-            '<a href="' . admin_url('admin.php?page=bp-resume-csv') . '">' . __('Settings', 'bp-resume-csv') . '</a>',
+            '<a href="' . admin_url('tools.php?page=bp-resume-csv') . '">' . __('Settings', 'bp-resume-csv') . '</a>',
         );
         return array_merge($plugin_links, $links);
     }
@@ -152,14 +149,14 @@ class BP_Resume_CSV_Admin {
     public function show_admin_notices() {
         // Check if dependencies are met
         if (!class_exists('BuddyPress')) {
-            echo '<div class="notice notice-error"><p>';
-            echo __('BP Resume CSV Import/Export requires BuddyPress to be installed and activated.', 'bp-resume-csv');
+            echo '<div class="notice notice-warning"><p>';
+            echo __('BP Resume CSV Import/Export: BuddyPress is not active. Some features may be limited.', 'bp-resume-csv');
             echo '</p></div>';
         }
         
         if (!defined('BPRM_PLUGIN_VERSION')) {
-            echo '<div class="notice notice-error"><p>';
-            echo __('BP Resume CSV Import/Export requires BP Resume Manager to be installed and activated.', 'bp-resume-csv');
+            echo '<div class="notice notice-warning"><p>';
+            echo __('BP Resume CSV Import/Export: BP Resume Manager is not active. Core functionality requires this plugin.', 'bp-resume-csv');
             echo '</p></div>';
         }
         
@@ -169,7 +166,7 @@ class BP_Resume_CSV_Admin {
             echo '<div class="notice notice-success is-dismissible"><p>';
             printf(
                 __('BP Resume CSV Import/Export is now active! <a href="%s">Configure settings</a>', 'bp-resume-csv'),
-                admin_url('admin.php?page=bp-resume-csv')
+                admin_url('tools.php?page=bp-resume-csv')
             );
             echo '</p></div>';
         }
@@ -432,6 +429,7 @@ class BP_Resume_CSV_Admin {
         .bp-resume-csv-admin-wrapper {
             display: flex;
             gap: 20px;
+            margin-top: 20px;
         }
         .bp-resume-csv-main-content {
             flex: 2;
@@ -442,11 +440,14 @@ class BP_Resume_CSV_Admin {
         .status-indicator {
             display: inline-flex;
             align-items: center;
-            gap: 5px;
-            margin: 5px 0;
+            gap: 8px;
+            margin: 8px 0;
+            padding: 5px 0;
         }
         .status-indicator .dashicons {
-            font-size: 16px;
+            font-size: 18px;
+            width: 18px;
+            height: 18px;
         }
         .status-indicator.success .dashicons {
             color: #00a32a;
@@ -461,17 +462,34 @@ class BP_Resume_CSV_Admin {
             margin: 15px 0;
         }
         .stat-item {
-            padding: 15px;
+            padding: 20px;
             background: #f8f9fa;
             border: 1px solid #e9ecef;
-            border-radius: 4px;
+            border-radius: 6px;
             text-align: center;
+            transition: transform 0.2s ease;
+        }
+        .stat-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
         .stat-number {
-            font-size: 24px;
+            font-size: 28px;
             font-weight: bold;
             color: #0073aa;
             display: block;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        @media (max-width: 1200px) {
+            .bp-resume-csv-admin-wrapper {
+                flex-direction: column;
+            }
         }
         </style>
         <?php
@@ -535,11 +553,13 @@ class BP_Resume_CSV_Admin {
             __('Max Post Size', 'bp-resume-csv') => ini_get('post_max_size'),
         );
         
+        echo '<div class="system-info">';
         echo '<ul>';
         foreach ($system_info as $label => $value) {
             echo '<li><strong>' . $label . ':</strong> ' . $value . '</li>';
         }
         echo '</ul>';
+        echo '</div>';
     }
     
     /**

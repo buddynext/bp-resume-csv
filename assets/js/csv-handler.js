@@ -2,101 +2,172 @@
 (function($) {
     'use strict';
 
+    // Debug logging
+    function debugLog(message, data) {
+        if (typeof console !== 'undefined') {
+            console.log('[BP Resume CSV]', message, data || '');
+        }
+    }
+
     // Wait for DOM to be ready
     $(document).ready(function() {
+        debugLog('Initializing CSV Handler');
+        debugLog('bprm_csv_ajax object:', bprm_csv_ajax);
         initializeCsvHandler();
     });
 
     function initializeCsvHandler() {
+        // Check if required variables exist
+        if (typeof bprm_csv_ajax === 'undefined') {
+            debugLog('ERROR: bprm_csv_ajax is not defined!');
+            return;
+        }
+
         // Download template CSV
         $('#bprm-download-template').on('click', function(e) {
             e.preventDefault();
+            debugLog('Download template button clicked');
             downloadCsv('template');
         });
 
         // Export current data
         $('#bprm-export-data').on('click', function(e) {
             e.preventDefault();
+            debugLog('Export data button clicked');
             downloadCsv('export');
         });
 
         // File input change handler
         $('#bprm-csv-file').on('change', function() {
+            debugLog('File input changed');
             handleFileSelection(this);
         });
 
         // Upload CSV form handler
         $('#bprm-csv-upload-form').on('submit', function(e) {
             e.preventDefault();
+            debugLog('Upload form submitted');
             handleCsvUpload();
+        });
+
+        // File remove handler
+        $(document).on('click', '.file-remove', function() {
+            debugLog('File remove clicked');
+            clearFileSelection();
         });
 
         // Drag and drop functionality
         initializeDragAndDrop();
 
-        // Initialize tooltips if available
-        if (typeof $.fn.tooltip === 'function') {
-            $('.bprm-csv-interface [title]').tooltip();
-        }
+        debugLog('CSV Handler initialized successfully');
     }
 
     /**
-     * Download CSV (template or export)
+     * Download CSV (template or export) - FIXED VERSION
      */
     function downloadCsv(type) {
+        debugLog('Starting download for type:', type);
+        
         const action = type === 'export' ? 'bprm_export_current_data' : 'bprm_download_sample_csv';
         const button = type === 'export' ? $('#bprm-export-data') : $('#bprm-download-template');
+        
+        debugLog('Action:', action);
+        debugLog('Button found:', button.length > 0);
         
         // Set loading state
         setButtonLoading(button, true);
 
-        // Create and submit form
-        const form = $('<form>', {
-            'method': 'POST',
-            'action': bprm_csv_ajax.ajax_url,
-            'style': 'display: none;'
+        // Use jQuery.ajax instead of fetch for better compatibility
+        $.ajax({
+            url: bprm_csv_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: action,
+                nonce: bprm_csv_ajax.nonce
+            },
+            xhrFields: {
+                responseType: 'blob'
+            },
+            success: function(data, textStatus, xhr) {
+                debugLog('Download successful');
+                
+                // Create blob and download
+                const blob = new Blob([data], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = type === 'export' ? 'resume_data_' + getCurrentTimestamp() + '.csv' : 'resume_template_' + getCurrentTimestamp() + '.csv';
+                
+                // Trigger download
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+                
+                const message = type === 'export' 
+                    ? bprm_csv_ajax.messages.export_success 
+                    : 'Template downloaded successfully!';
+                showMessage(message, 'success');
+            },
+            error: function(xhr, textStatus, errorThrown) {
+                debugLog('Download error:', {
+                    status: xhr.status,
+                    statusText: xhr.statusText,
+                    responseText: xhr.responseText,
+                    textStatus: textStatus,
+                    errorThrown: errorThrown
+                });
+                
+                let errorMessage = 'Download failed. ';
+                if (xhr.status === 0) {
+                    errorMessage += 'Network error - please check your connection.';
+                } else if (xhr.status === 403) {
+                    errorMessage += 'Permission denied - please log in and try again.';
+                } else if (xhr.status === 404) {
+                    errorMessage += 'Download endpoint not found.';
+                } else if (xhr.status === 500) {
+                    errorMessage += 'Server error - please try again later.';
+                } else {
+                    errorMessage += 'Error code: ' + xhr.status;
+                }
+                
+                showMessage(errorMessage, 'error');
+            },
+            complete: function() {
+                setButtonLoading(button, false);
+            }
         });
+    }
 
-        form.append($('<input>', {
-            'type': 'hidden',
-            'name': 'action',
-            'value': action
-        }));
-
-        form.append($('<input>', {
-            'type': 'hidden',
-            'name': 'nonce',
-            'value': bprm_csv_ajax.nonce
-        }));
-
-        $('body').append(form);
-        
-        // Submit form and clean up
-        form.submit();
-        
-        setTimeout(function() {
-            form.remove();
-            setButtonLoading(button, false);
-            
-            const message = type === 'export' 
-                ? bprm_csv_ajax.messages.export_success 
-                : 'Template downloaded successfully!';
-            showMessage(message, 'success');
-        }, 1000);
+    /**
+     * Get current timestamp for filename
+     */
+    function getCurrentTimestamp() {
+        const now = new Date();
+        return now.getFullYear() + '-' + 
+               String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+               String(now.getDate()).padStart(2, '0') + '_' + 
+               String(now.getHours()).padStart(2, '0') + '-' + 
+               String(now.getMinutes()).padStart(2, '0') + '-' + 
+               String(now.getSeconds()).padStart(2, '0');
     }
 
     /**
      * Handle file selection
      */
     function handleFileSelection(input) {
-        const fileNameSpan = $('.file-name');
-        const wrapper = $('.bprm-file-input-wrapper');
+        debugLog('Handling file selection');
+        
+        const fileUploadArea = $('#file-drop-zone');
+        const fileSelectedInfo = $('.file-selected-info');
+        const fileUploadContent = $('.file-upload-content');
         
         if (input.files && input.files.length > 0) {
-            const fileName = input.files[0].name;
-            const fileSize = formatFileSize(input.files[0].size);
-            fileNameSpan.text(`${fileName} (${fileSize})`);
-            wrapper.addClass('has-file');
+            const file = input.files[0];
+            const fileName = file.name;
+            const fileSize = formatFileSize(file.size);
+            
+            debugLog('File selected:', fileName, 'Size:', fileSize);
             
             // Validate file type
             if (!fileName.toLowerCase().endsWith('.csv')) {
@@ -106,11 +177,21 @@
             }
             
             // Validate file size (max 5MB)
-            if (input.files[0].size > 5 * 1024 * 1024) {
+            if (file.size > 5 * 1024 * 1024) {
                 showMessage('File size must be less than 5MB.', 'error');
                 clearFileSelection();
                 return;
             }
+            
+            // Update UI
+            $('.file-name').text(fileName);
+            $('.file-size').text(fileSize);
+            fileUploadContent.hide();
+            fileSelectedInfo.show();
+            fileUploadArea.addClass('has-file');
+            
+            // Show preview
+            showFilePreview(file);
             
         } else {
             clearFileSelection();
@@ -121,20 +202,30 @@
      * Clear file selection
      */
     function clearFileSelection() {
+        debugLog('Clearing file selection');
         $('#bprm-csv-file').val('');
-        $('.file-name').text('');
-        $('.bprm-file-input-wrapper').removeClass('has-file');
+        $('.file-selected-info').hide();
+        $('.file-upload-content').show();
+        $('#file-drop-zone').removeClass('has-file');
+        $('.csv-file-preview').hide();
     }
 
     /**
      * Handle CSV upload
      */
     function handleCsvUpload() {
+        debugLog('Starting CSV upload');
+        
         const fileInput = $('#bprm-csv-file')[0];
         const submitButton = $('#bprm-csv-upload-form button[type="submit"]');
         
         if (!fileInput.files.length) {
             showMessage(bprm_csv_ajax.messages.file_required, 'error');
+            return;
+        }
+
+        // Confirm import
+        if (!confirm(bprm_csv_ajax.messages.confirm_import)) {
             return;
         }
 
@@ -144,6 +235,8 @@
             showMessage('Please select a CSV file.', 'error');
             return;
         }
+
+        debugLog('Uploading file:', file.name);
 
         // Create form data
         const formData = new FormData();
@@ -176,6 +269,8 @@
                 return xhr;
             },
             success: function(response) {
+                debugLog('Upload response:', response);
+                
                 setButtonLoading(submitButton, false);
                 hideProgress();
                 
@@ -184,14 +279,18 @@
                     clearFileSelection();
                     
                     // Optionally reload page after successful import
-                    if (confirm('Data imported successfully! Would you like to reload the page to see the changes?')) {
-                        window.location.reload();
-                    }
+                    setTimeout(() => {
+                        if (confirm('Data imported successfully! Would you like to reload the page to see the changes?')) {
+                            window.location.reload();
+                        }
+                    }, 2000);
                 } else {
-                    showMessage(response.data.message, 'error');
+                    showMessage(response.data.message || 'Import failed', 'error');
                 }
             },
             error: function(xhr, status, error) {
+                debugLog('Upload error:', xhr, status, error);
+                
                 setButtonLoading(submitButton, false);
                 hideProgress();
                 
@@ -214,9 +313,11 @@
      * Initialize drag and drop functionality
      */
     function initializeDragAndDrop() {
-        const dropZone = $('.bprm-csv-section').has('#bprm-csv-upload-form');
+        const dropZone = $('#file-drop-zone');
         
         if (!dropZone.length) return;
+
+        debugLog('Initializing drag and drop');
 
         // Prevent default drag behaviors
         $(document).on('dragenter dragover drop', function(e) {
@@ -226,19 +327,18 @@
         // Drop zone events
         dropZone.on('dragenter dragover', function(e) {
             e.preventDefault();
-            $(this).addClass('drag-over');
+            $(this).addClass('dragover');
         });
 
         dropZone.on('dragleave', function(e) {
-            // Only remove class if we're leaving the drop zone entirely
             if (!$.contains(this, e.relatedTarget)) {
-                $(this).removeClass('drag-over');
+                $(this).removeClass('dragover');
             }
         });
 
         dropZone.on('drop', function(e) {
             e.preventDefault();
-            $(this).removeClass('drag-over');
+            $(this).removeClass('dragover');
             
             const files = e.originalEvent.dataTransfer.files;
             if (files.length > 0) {
@@ -254,12 +354,12 @@
      */
     function setButtonLoading(button, loading) {
         if (loading) {
-            button.addClass('processing')
+            button.addClass('loading')
                   .prop('disabled', true)
                   .data('original-text', button.text())
                   .text(bprm_csv_ajax.messages.processing);
         } else {
-            button.removeClass('processing')
+            button.removeClass('loading')
                   .prop('disabled', false)
                   .text(button.data('original-text') || button.text().replace(bprm_csv_ajax.messages.processing, '').trim());
         }
@@ -269,14 +369,25 @@
      * Show progress bar
      */
     function showProgress(percent) {
-        let progressContainer = $('.bprm-progress');
+        let progressContainer = $('#csv-progress');
         
         if (!progressContainer.length) {
-            progressContainer = $('<div class="bprm-progress"><div class="bprm-progress-bar"></div></div>');
+            progressContainer = $(`
+                <div id="csv-progress" class="csv-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-text">
+                        <span class="progress-label">Processing...</span>
+                        <span class="progress-percentage">0%</span>
+                    </div>
+                </div>
+            `);
             $('#bprm-csv-upload-form').after(progressContainer);
         }
         
-        progressContainer.find('.bprm-progress-bar').css('width', percent + '%');
+        progressContainer.find('.progress-fill').css('width', percent + '%');
+        progressContainer.find('.progress-percentage').text(Math.round(percent) + '%');
         progressContainer.show();
     }
 
@@ -284,24 +395,32 @@
      * Hide progress bar
      */
     function hideProgress() {
-        $('.bprm-progress').fadeOut(300, function() {
-            $(this).remove();
-        });
+        $('#csv-progress').fadeOut(300);
     }
 
     /**
      * Show message to user
      */
     function showMessage(message, type) {
-        const messageClass = type === 'success' ? 'notice-success' : 'notice-error';
-        const icon = type === 'success' ? 'yes-alt' : 'warning';
+        debugLog('Showing message:', type, message);
+        
+        const messageClass = type === 'success' ? 'success' : (type === 'error' ? 'error' : 'info');
+        const icon = type === 'success' ? 
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 12L11 14L15 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' :
+            (type === 'error' ? 
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 8V12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 16H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' :
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 16V12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>');
         
         const messageHtml = `
-            <div class="notice ${messageClass}">
-                <p>
-                    <span class="dashicons dashicons-${icon}"></span>
-                    ${message}
-                </p>
+            <div class="csv-message ${messageClass}">
+                ${icon}
+                <span>${message}</span>
+                <button type="button" class="message-dismiss" onclick="$(this).parent().fadeOut()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
             </div>
         `;
         
@@ -311,14 +430,16 @@
         // Auto-hide success messages
         if (type === 'success') {
             setTimeout(function() {
-                messagesContainer.fadeOut();
+                messagesContainer.find('.csv-message').fadeOut();
             }, 5000);
         }
         
         // Scroll to message
-        $('html, body').animate({
-            scrollTop: messagesContainer.offset().top - 50
-        }, 300);
+        if (messagesContainer.length && messagesContainer.offset()) {
+            $('html, body').animate({
+                scrollTop: messagesContainer.offset().top - 100
+            }, 300);
+        }
     }
 
     /**
@@ -335,201 +456,9 @@
     }
 
     /**
-     * Validate CSV structure (basic client-side validation)
+     * Show file preview
      */
-    function validateCsvStructure(file) {
-        return new Promise(function(resolve, reject) {
-            const reader = new FileReader();
-            
-            reader.onload = function(e) {
-                const text = e.target.result;
-                const lines = text.split('\n');
-                
-                // Check if file has content
-                if (lines.length < 2) {
-                    reject('CSV file appears to be empty or has no data rows.');
-                    return;
-                }
-                
-                // Look for required headers
-                const headerLine = lines.find(line => !line.startsWith('#') && line.trim() !== '');
-                if (!headerLine) {
-                    reject('Could not find header row in CSV file.');
-                    return;
-                }
-                
-                const headers = headerLine.split(',').map(h => h.trim().toLowerCase());
-                const requiredHeaders = ['group_key', 'field_key', 'field_value'];
-                
-                const missingHeaders = requiredHeaders.filter(header => 
-                    !headers.some(h => h.includes(header))
-                );
-                
-                if (missingHeaders.length > 0) {
-                    reject(`Missing required headers: ${missingHeaders.join(', ')}`);
-                    return;
-                }
-                
-                resolve(true);
-            };
-            
-            reader.onerror = function() {
-                reject('Error reading file.');
-            };
-            
-            // Read only first 1KB for validation
-            reader.readAsText(file.slice(0, 1024));
-        });
-    }
-
-    /**
-     * Enhanced file validation
-     */
-    function validateFile(file) {
-        return new Promise(function(resolve, reject) {
-            // Check file type
-            if (!file.name.toLowerCase().endsWith('.csv')) {
-                reject('Please select a CSV file.');
-                return;
-            }
-            
-            // Check file size (max 5MB)
-            if (file.size > 5 * 1024 * 1024) {
-                reject('File size must be less than 5MB.');
-                return;
-            }
-            
-            // Check if file is empty
-            if (file.size === 0) {
-                reject('The selected file is empty.');
-                return;
-            }
-            
-            // Validate CSV structure
-            validateCsvStructure(file)
-                .then(resolve)
-                .catch(reject);
-        });
-    }
-
-    // Enhanced upload with validation
-    function handleCsvUploadEnhanced() {
-        const fileInput = $('#bprm-csv-file')[0];
-        const submitButton = $('#bprm-csv-upload-form button[type="submit"]');
-        
-        if (!fileInput.files.length) {
-            showMessage(bprm_csv_ajax.messages.file_required, 'error');
-            return;
-        }
-
-        const file = fileInput.files[0];
-        
-        // Show validation progress
-        showMessage('Validating file...', 'info');
-        
-        validateFile(file)
-            .then(function() {
-                // File is valid, proceed with upload
-                handleCsvUpload();
-            })
-            .catch(function(error) {
-                showMessage(error, 'error');
-            });
-    }
-
-    // Replace the original upload handler
-    $('#bprm-csv-upload-form').off('submit').on('submit', function(e) {
-        e.preventDefault();
-        handleCsvUploadEnhanced();
-    });
-
-    /**
-     * Show info message
-     */
-    function showInfoMessage(message) {
-        showMessage(message, 'info');
-    }
-
-    // Add CSS for drag and drop styling
-    $('<style>')
-        .prop('type', 'text/css')
-        .html(`
-            .bprm-csv-section.drag-over {
-                border: 2px dashed #0073aa;
-                background-color: #f0f6fc;
-                transform: scale(1.02);
-                transition: all 0.2s ease;
-            }
-            .notice.notice-info {
-                border-left-color: #0073aa;
-                background: #f0f6fc;
-            }
-            .bprm-csv-section {
-                transition: all 0.2s ease;
-            }
-        `)
-        .appendTo('head');
-
-    // Keyboard accessibility
-    $(document).on('keydown', function(e) {
-        // ESC key to cancel operations
-        if (e.keyCode === 27) {
-            // Cancel any ongoing uploads
-            if ($('.bprm-csv-interface .processing').length) {
-                if (confirm('Cancel the current operation?')) {
-                    window.location.reload();
-                }
-            }
-        }
-    });
-
-    // Auto-save form state
-    function saveFormState() {
-        const fileInput = $('#bprm-csv-file')[0];
-        if (fileInput.files.length > 0) {
-            sessionStorage.setItem('bprm_csv_file_name', fileInput.files[0].name);
-        }
-    }
-
-    function restoreFormState() {
-        const savedFileName = sessionStorage.getItem('bprm_csv_file_name');
-        if (savedFileName) {
-            $('.file-name').text(`Previously selected: ${savedFileName}`);
-            sessionStorage.removeItem('bprm_csv_file_name');
-        }
-    }
-
-    // Initialize form state
-    restoreFormState();
-
-    // Save state on file change
-    $('#bprm-csv-file').on('change', saveFormState);
-
-    // Add confirmation for data replacement
-    function confirmDataReplacement() {
-        return confirm(
-            'Importing CSV data will replace your existing resume information. ' +
-            'Make sure you have exported your current data if you want to keep a backup. ' +
-            'Do you want to continue?'
-        );
-    }
-
-    // Enhanced upload with confirmation
-    function handleCsvUploadWithConfirmation() {
-        if (!confirmDataReplacement()) {
-            return;
-        }
-        handleCsvUploadEnhanced();
-    }
-
-    // Update the form handler to include confirmation
-    $('#bprm-csv-upload-form').off('submit').on('submit', function(e) {
-        e.preventDefault();
-        handleCsvUploadWithConfirmation();
-    });
-
-    // Add preview functionality
-    function previewCsvData(file) {
+    function showFilePreview(file) {
         return new Promise(function(resolve, reject) {
             const reader = new FileReader();
             
@@ -546,6 +475,20 @@
                     })
                     .join('\n');
                 
+                // Show preview in UI
+                let previewContainer = $('.csv-file-preview');
+                if (!previewContainer.length) {
+                    previewContainer = $(`
+                        <div class="csv-file-preview" style="margin-top: 16px; padding: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <h5 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: #374151;">File Preview:</h5>
+                            <pre style="margin: 0; font-size: 12px; line-height: 1.4; color: #6b7280; white-space: pre-wrap; max-height: 120px; overflow-y: auto;"></pre>
+                        </div>
+                    `);
+                    $('.file-selected-info').after(previewContainer);
+                }
+                previewContainer.find('pre').text(preview);
+                previewContainer.show();
+                
                 resolve(preview);
             };
             
@@ -557,97 +500,35 @@
         });
     }
 
-    // Show preview when file is selected
-    $('#bprm-csv-file').on('change', function() {
-        handleFileSelection(this);
-        
-        if (this.files && this.files.length > 0) {
-            const file = this.files[0];
-            
-            previewCsvData(file)
-                .then(function(preview) {
-                    let previewContainer = $('.csv-preview');
-                    if (!previewContainer.length) {
-                        previewContainer = $('<div class="csv-preview"><h5>File Preview:</h5><pre></pre></div>');
-                        $('#bprm-csv-upload-form').after(previewContainer);
-                    }
-                    previewContainer.find('pre').text(preview);
-                    previewContainer.show();
-                })
-                .catch(function(error) {
-                    console.warn('Could not generate preview:', error);
-                });
-        } else {
-            $('.csv-preview').hide();
-        }
+    // Debug: Log when buttons are found
+    $(document).ready(function() {
+        setTimeout(function() {
+            debugLog('Download template button exists:', $('#bprm-download-template').length > 0);
+            debugLog('Export data button exists:', $('#bprm-export-data').length > 0);
+            debugLog('Upload form exists:', $('#bprm-csv-upload-form').length > 0);
+        }, 1000);
     });
 
-    // Add styles for preview
-    $('<style>')
-        .prop('type', 'text/css')
-        .html(`
-            .csv-preview {
-                margin: 15px 0;
-                padding: 15px;
-                background: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-            }
-            .csv-preview h5 {
-                margin: 0 0 10px 0;
-                color: #495057;
-            }
-            .csv-preview pre {
-                margin: 0;
-                background: #fff;
-                padding: 10px;
-                border: 1px solid #e9ecef;
-                border-radius: 3px;
-                font-size: 12px;
-                line-height: 1.4;
-                max-height: 150px;
-                overflow-y: auto;
-            }
-        `)
-        .appendTo('head');
-
-    // Analytics/tracking (if needed)
-    function trackEvent(action, label) {
-        if (typeof gtag !== 'undefined') {
-            gtag('event', action, {
-                'event_category': 'BP Resume CSV',
-                'event_label': label
-            });
-        }
-    }
-
-    // Track user actions
-    $('#bprm-download-template').on('click', function() {
-        trackEvent('download', 'template');
-    });
-
-    $('#bprm-export-data').on('click', function() {
-        trackEvent('download', 'export');
-    });
-
-    $('#bprm-csv-upload-form').on('submit', function() {
-        trackEvent('upload', 'csv_data');
-    });
-
-    // Error reporting
+    // Error handling
     window.addEventListener('error', function(e) {
         if (e.filename && e.filename.includes('csv-handler.js')) {
-            console.error('CSV Handler Error:', e.error);
-            showMessage('An unexpected error occurred. Please refresh the page and try again.', 'error');
+            debugLog('JavaScript Error:', e.error);
         }
     });
 
-    // Expose public methods for external use
+    // Expose public methods for external use and debugging
     window.BPResumeCSV = {
         downloadTemplate: function() { downloadCsv('template'); },
         exportData: function() { downloadCsv('export'); },
         showMessage: showMessage,
-        validateFile: validateFile
+        clearFileSelection: clearFileSelection,
+        debugLog: debugLog
     };
+
+    // Add message dismiss functionality
+    $(document).on('click', '.message-dismiss', function(e) {
+        e.preventDefault();
+        $(this).parent().fadeOut(200);
+    });
 
 })(jQuery);

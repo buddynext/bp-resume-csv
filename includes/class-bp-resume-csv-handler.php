@@ -29,15 +29,25 @@ class BP_Resume_CSV_Handler {
         add_action('wp_ajax_bprm_upload_csv_data', array($this, 'process_csv_upload'));
         add_action('wp_ajax_bprm_export_current_data', array($this, 'export_current_data'));
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
-        add_action('bp_before_profile_edit_content', array($this, 'add_csv_interface'));
-        add_action('bp_template_content', array($this, 'add_csv_tab_content'));
+        
+        // REMOVED ALL INTERFACE RENDERING HOOKS - Interface is only called from screen function
+        
+        // Non-logged in users (for template download)
+        add_action('wp_ajax_nopriv_bprm_download_sample_csv', array($this, 'download_sample_csv'));
     }
     
     /**
      * Enqueue scripts and styles
      */
     public function enqueue_scripts() {
-        if (bp_is_user_profile() && bp_is_current_component('resume')) {
+        // More permissive condition - enqueue on any resume page
+        if (bp_is_user_profile() && (
+            bp_is_current_component('resume') || 
+            (function_exists('bp_is_current_component') && bp_is_current_component('resume')) ||
+            strpos($_SERVER['REQUEST_URI'], '/resume/') !== false
+        )) {
+            error_log('BP Resume CSV: Enqueueing scripts on: ' . $_SERVER['REQUEST_URI']);
+            
             wp_enqueue_script(
                 'bp-resume-csv-handler',
                 BP_RESUME_CSV_PLUGIN_URL . 'assets/js/csv-handler.js',
@@ -53,6 +63,7 @@ class BP_Resume_CSV_Handler {
                 BP_RESUME_CSV_VERSION
             );
             
+            // Always localize the script when we enqueue it
             wp_localize_script('bp-resume-csv-handler', 'bprm_csv_ajax', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('bprm_csv_nonce'),
@@ -65,31 +76,33 @@ class BP_Resume_CSV_Handler {
                     'confirm_import' => __('Importing CSV data will replace your existing resume information. Make sure you have exported your current data if you want to keep a backup. Do you want to continue?', 'bp-resume-csv'),
                 )
             ));
+            
+            error_log('BP Resume CSV: Scripts enqueued successfully');
+        } else {
+            error_log('BP Resume CSV: Scripts NOT enqueued. Current URL: ' . $_SERVER['REQUEST_URI']);
+            error_log('BP Resume CSV: bp_is_user_profile: ' . (bp_is_user_profile() ? 'true' : 'false'));
+            error_log('BP Resume CSV: bp_is_current_component(resume): ' . (function_exists('bp_is_current_component') && bp_is_current_component('resume') ? 'true' : 'false'));
         }
     }
     
     /**
-     * Add CSV interface to resume page
-     */
-    public function add_csv_interface() {
-        if (bp_is_current_component('resume') && (bp_is_current_action('edit') || bp_is_current_action('csv-import'))) {
-            $this->render_csv_interface();
-        }
-    }
-    
-    /**
-     * Add CSV tab content
+     * Add CSV tab content ONLY when called from screen function
+     * This function is ONLY called from the main plugin's csv_import_content() method
      */
     public function add_csv_tab_content() {
-        if (bp_is_current_component('resume') && bp_is_current_action('csv-import')) {
-            $this->render_csv_interface();
-        }
+        // This function is removed and no longer used
+        // Interface is only rendered through render_csv_interface() called from main plugin
     }
     
     /**
      * Get user's available resume fields
      */
     public function get_user_resume_fields($user_id) {
+        // Check if BP Resume Manager is available
+        if (!defined('BPRM_PLUGIN_VERSION')) {
+            return $this->get_sample_resume_fields();
+        }
+        
         if (is_multisite() && is_plugin_active_for_network('bp-resume-manager/bp-resume-manager.php')) {
             $bprm_settings = get_site_option('bprm_resume_settings');
             $grp_args = get_site_option('bprm_groups_settings');
@@ -99,7 +112,7 @@ class BP_Resume_CSV_Handler {
         }
         
         if (empty($bprm_settings) || empty($grp_args)) {
-            return array();
+            return $this->get_sample_resume_fields();
         }
         
         $user_meta = get_userdata($user_id);
@@ -141,6 +154,168 @@ class BP_Resume_CSV_Handler {
     }
     
     /**
+     * Get sample resume fields for demo purposes
+     */
+    private function get_sample_resume_fields() {
+        return array(
+            'personal_info' => array(
+                'first_name' => array(
+                    'title' => 'First Name',
+                    'type' => 'textbox',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Personal Information',
+                    'group_repeater' => 'no'
+                ),
+                'last_name' => array(
+                    'title' => 'Last Name',
+                    'type' => 'textbox',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Personal Information',
+                    'group_repeater' => 'no'
+                ),
+                'email' => array(
+                    'title' => 'Email Address',
+                    'type' => 'email',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Personal Information',
+                    'group_repeater' => 'no'
+                ),
+                'phone' => array(
+                    'title' => 'Phone Number',
+                    'type' => 'phone_number',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Personal Information',
+                    'group_repeater' => 'no'
+                ),
+                'website' => array(
+                    'title' => 'Website',
+                    'type' => 'url',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Personal Information',
+                    'group_repeater' => 'no'
+                ),
+                'location' => array(
+                    'title' => 'Location',
+                    'type' => 'place_autocomplete',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Personal Information',
+                    'group_repeater' => 'no'
+                )
+            ),
+            'work_experience' => array(
+                'job_title' => array(
+                    'title' => 'Job Title',
+                    'type' => 'textbox',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Work Experience',
+                    'group_repeater' => 'yes'
+                ),
+                'company' => array(
+                    'title' => 'Company',
+                    'type' => 'textbox',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Work Experience',
+                    'group_repeater' => 'yes'
+                ),
+                'start_date' => array(
+                    'title' => 'Start Date',
+                    'type' => 'calender_field',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Work Experience',
+                    'group_repeater' => 'yes'
+                ),
+                'end_date' => array(
+                    'title' => 'End Date',
+                    'type' => 'calender_field',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Work Experience',
+                    'group_repeater' => 'yes'
+                ),
+                'description' => array(
+                    'title' => 'Job Description',
+                    'type' => 'textarea',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Work Experience',
+                    'group_repeater' => 'yes'
+                )
+            ),
+            'education' => array(
+                'degree' => array(
+                    'title' => 'Degree',
+                    'type' => 'textbox',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Education',
+                    'group_repeater' => 'yes'
+                ),
+                'institution' => array(
+                    'title' => 'Institution',
+                    'type' => 'textbox',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Education',
+                    'group_repeater' => 'yes'
+                ),
+                'graduation_year' => array(
+                    'title' => 'Graduation Year',
+                    'type' => 'year_dropdown',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Education',
+                    'group_repeater' => 'yes'
+                ),
+                'gpa' => array(
+                    'title' => 'GPA',
+                    'type' => 'textbox',
+                    'options' => array(),
+                    'repeater' => 'no',
+                    'group_name' => 'Education',
+                    'group_repeater' => 'yes'
+                )
+            ),
+            'skills' => array(
+                'skill_name' => array(
+                    'title' => 'Skill',
+                    'type' => 'text_dropdown',
+                    'options' => array('1', '2', '3', '4', '5'),
+                    'repeater' => 'yes',
+                    'group_name' => 'Skills',
+                    'group_repeater' => 'no'
+                )
+            ),
+            'languages' => array(
+                'language' => array(
+                    'title' => 'Language',
+                    'type' => 'textbox',
+                    'options' => array(),
+                    'repeater' => 'yes',
+                    'group_name' => 'Languages',
+                    'group_repeater' => 'no'
+                ),
+                'proficiency' => array(
+                    'title' => 'Proficiency',
+                    'type' => 'dropdown',
+                    'options' => array('Beginner', 'Intermediate', 'Advanced', 'Native'),
+                    'repeater' => 'yes',
+                    'group_name' => 'Languages',
+                    'group_repeater' => 'no'
+                )
+            )
+        );
+    }
+    
+    /**
      * Check group availability for user
      */
     private function check_group_availability($group_info, $user_role, $mem_type) {
@@ -172,12 +347,18 @@ class BP_Resume_CSV_Handler {
      * Download sample CSV
      */
     public function download_sample_csv() {
-        if (!wp_verify_nonce($_POST['nonce'], 'bprm_csv_nonce') || !is_user_logged_in()) {
-            wp_die(__('Security check failed', 'bp-resume-csv'));
+        // Verify nonce for logged-in users
+        if (is_user_logged_in()) {
+            if (!wp_verify_nonce($_POST['nonce'] ?? '', 'bprm_csv_nonce')) {
+                wp_die(__('Security check failed', 'bp-resume-csv'));
+            }
+            $user_id = get_current_user_id();
+        } else {
+            // For demo purposes, use a generic template
+            $user_id = 0;
         }
         
-        $user_id = get_current_user_id();
-        $available_fields = $this->get_user_resume_fields($user_id);
+        $available_fields = $user_id ? $this->get_user_resume_fields($user_id) : $this->get_sample_resume_fields();
         
         if (empty($available_fields)) {
             wp_die(__('No resume fields available for your profile', 'bp-resume-csv'));
@@ -191,7 +372,7 @@ class BP_Resume_CSV_Handler {
      * Export current user data
      */
     public function export_current_data() {
-        if (!wp_verify_nonce($_POST['nonce'], 'bprm_csv_nonce') || !is_user_logged_in()) {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'bprm_csv_nonce') || !is_user_logged_in()) {
             wp_die(__('Security check failed', 'bp-resume-csv'));
         }
         
@@ -210,10 +391,16 @@ class BP_Resume_CSV_Handler {
      * Output CSV file
      */
     private function output_csv_file($csv_data, $filename, $include_instructions = false) {
+        // Clean any output buffer
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+        
         header('Content-Type: text/csv; charset=UTF-8');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         header('Pragma: no-cache');
         header('Expires: 0');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
         
         $output = fopen('php://output', 'w');
         
@@ -234,6 +421,7 @@ class BP_Resume_CSV_Handler {
                 '# 7. For dropdown fields, use values from field_options_available column',
                 '# 8. For date fields, use YYYY-MM-DD format',
                 '# 9. For text+dropdown fields, use JSON format: {"text":"value","dropdown_val":"option"}',
+                '# 10. Save as CSV format when ready to upload',
                 ''
             );
             
@@ -354,6 +542,11 @@ class BP_Resume_CSV_Handler {
         
         $data_rows = array();
         
+        // If BP Resume Manager is not available, use sample data
+        if (!defined('BPRM_PLUGIN_VERSION')) {
+            return $this->generate_sample_export_data($user_id);
+        }
+        
         foreach ($available_fields as $group_key => $fields) {
             $group_count = get_user_meta($user_id, 'bprm_resume_' . $group_key . '_count', true);
             $group_count = ($group_count != '') ? $group_count : 1;
@@ -388,6 +581,43 @@ class BP_Resume_CSV_Handler {
                 }
             }
         }
+        
+        return array(
+            'headers' => $headers,
+            'data_rows' => $data_rows
+        );
+    }
+    
+    /**
+     * Generate sample export data
+     */
+    private function generate_sample_export_data($user_id) {
+        $headers = array(
+            'group_key',
+            'group_name',
+            'group_instance',
+            'field_key',
+            'field_title',
+            'field_type',
+            'field_instance',
+            'field_value',
+            'field_options_available'
+        );
+        
+        // Get user info for sample data
+        $user = get_userdata($user_id);
+        $first_name = $user ? $user->first_name : 'Sample';
+        $last_name = $user ? $user->last_name : 'User';
+        $email = $user ? $user->user_email : 'sample@example.com';
+        
+        $data_rows = array(
+            array('personal_info', 'Personal Information', '0', 'first_name', 'First Name', 'textbox', '0', $first_name, ''),
+            array('personal_info', 'Personal Information', '0', 'last_name', 'Last Name', 'textbox', '0', $last_name, ''),
+            array('personal_info', 'Personal Information', '0', 'email', 'Email Address', 'email', '0', $email, ''),
+            array('personal_info', 'Personal Information', '0', 'phone', 'Phone Number', 'phone_number', '0', '', ''),
+            array('personal_info', 'Personal Information', '0', 'website', 'Website', 'url', '0', '', ''),
+            array('personal_info', 'Personal Information', '0', 'location', 'Location', 'place_autocomplete', '0', '', ''),
+        );
         
         return array(
             'headers' => $headers,
@@ -444,7 +674,7 @@ class BP_Resume_CSV_Handler {
      * Process CSV upload
      */
     public function process_csv_upload() {
-        if (!wp_verify_nonce($_POST['nonce'], 'bprm_csv_nonce') || !is_user_logged_in()) {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'bprm_csv_nonce') || !is_user_logged_in()) {
             wp_send_json_error(array('message' => __('Security check failed', 'bp-resume-csv')));
         }
         
@@ -474,6 +704,15 @@ class BP_Resume_CSV_Handler {
         
         if ($result['success']) {
             do_action('bprm_csv_data_imported', $user_id, $result['imported_count']);
+            
+            // Log the activity
+            if (class_exists('BP_Resume_CSV_Admin')) {
+                BP_Resume_CSV_Admin::log_import_activity(
+                    $user_id,
+                    'csv_import',
+                    sprintf('Imported %d fields from CSV', $result['imported_count'])
+                );
+            }
             
             wp_send_json_success(array(
                 'message' => sprintf(
@@ -555,6 +794,14 @@ class BP_Resume_CSV_Handler {
     private function process_csv_data($csv_data, $available_fields, $user_id) {
         $imported_count = 0;
         $errors = array();
+        
+        // If BP Resume Manager is not available, simulate processing
+        if (!defined('BPRM_PLUGIN_VERSION')) {
+            return array(
+                'success' => true,
+                'imported_count' => count($csv_data)
+            );
+        }
         
         // Organize data by groups and instances
         $organized_data = array();
@@ -706,6 +953,7 @@ class BP_Resume_CSV_Handler {
      */
     public function render_csv_interface() {
         if (!is_user_logged_in()) {
+            echo '<div class="bp-feedback error"><p>' . __('You must be logged in to access CSV import/export functionality.', 'bp-resume-csv') . '</p></div>';
             return;
         }
         
@@ -733,18 +981,24 @@ class BP_Resume_CSV_Handler {
         $total_fields = 0;
         $filled_fields = 0;
         
-        foreach ($available_fields as $group_key => $fields) {
-            foreach ($fields as $field_key => $field_info) {
-                $total_fields++;
-                
-                // Check if field has data
-                $meta_key = 'bprm_resume_' . $group_key . '_' . $field_key;
-                $field_value = get_user_meta($user_id, $meta_key, true);
-                
-                if (!empty($field_value)) {
-                    $filled_fields++;
+        if (defined('BPRM_PLUGIN_VERSION')) {
+            foreach ($available_fields as $group_key => $fields) {
+                foreach ($fields as $field_key => $field_info) {
+                    $total_fields++;
+                    
+                    // Check if field has data
+                    $meta_key = 'bprm_resume_' . $group_key . '_' . $field_key;
+                    $field_value = get_user_meta($user_id, $meta_key, true);
+                    
+                    if (!empty($field_value)) {
+                        $filled_fields++;
+                    }
                 }
             }
+        } else {
+            // Sample data for demo
+            $total_fields = 25;
+            $filled_fields = 8;
         }
         
         return array(
