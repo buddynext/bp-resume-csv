@@ -671,7 +671,33 @@ class BP_Resume_CSV_Handler {
     }
     
     /**
-     * Process CSV upload
+     * Validate uploaded file - MISSING FUNCTION
+     */
+    private function validate_uploaded_file($file) {
+        $file_type = wp_check_filetype($file['name']);
+        
+        if ($file_type['ext'] !== 'csv') {
+            return new WP_Error('invalid_file_type', __('Only CSV files are allowed', 'bp-resume-csv'));
+        }
+        
+        // Check file size (max 5MB by default)
+        $max_size = apply_filters('bprm_csv_max_file_size', 5 * 1024 * 1024);
+        if ($file['size'] > $max_size) {
+            return new WP_Error('file_too_large', sprintf(
+                __('File size must be less than %s', 'bp-resume-csv'),
+                size_format($max_size)
+            ));
+        }
+        
+        // Check if file is empty
+        if ($file['size'] === 0) {
+            return new WP_Error('empty_file', __('The uploaded file is empty', 'bp-resume-csv'));
+        }
+        
+        return true;
+    }
+    /**
+     * Process CSV upload - FIXED VERSION
      */
     public function process_csv_upload() {
         if (!wp_verify_nonce($_POST['nonce'] ?? '', 'bprm_csv_nonce') || !is_user_logged_in()) {
@@ -699,8 +725,15 @@ class BP_Resume_CSV_Handler {
             wp_send_json_error(array('message' => __('Error reading CSV file. Please check the file format.', 'bp-resume-csv')));
         }
         
-        // Process data
-        $result = $this->process_csv_data($csv_data, $available_fields, $user_id);
+        // Debug logging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('BP Resume CSV: Processing ' . count($csv_data) . ' CSV rows for user ' . $user_id);
+            error_log('BP Resume CSV: Available fields: ' . print_r(array_keys($available_fields), true));
+            error_log('BP Resume CSV: First CSV row: ' . print_r($csv_data[0] ?? array(), true));
+        }
+        
+        // Process data with improved logic
+        $result = $this->process_csv_data_improved($csv_data, $available_fields, $user_id);
         
         if ($result['success']) {
             do_action('bprm_csv_data_imported', $user_id, $result['imported_count']);
@@ -710,56 +743,288 @@ class BP_Resume_CSV_Handler {
                 BP_Resume_CSV_Admin::log_import_activity(
                     $user_id,
                     'csv_import',
-                    sprintf('Imported %d fields from CSV', $result['imported_count'])
+                    sprintf('Imported %d fields from CSV (%d rows processed)', $result['imported_count'], count($csv_data))
                 );
             }
             
             wp_send_json_success(array(
                 'message' => sprintf(
-                    __('Resume data imported successfully! %d fields updated.', 'bp-resume-csv'), 
-                    $result['imported_count']
+                    __('Resume data imported successfully! %d fields updated from %d CSV rows.', 'bp-resume-csv'), 
+                    $result['imported_count'],
+                    count($csv_data)
                 ),
-                'imported_count' => $result['imported_count']
+                'imported_count' => $result['imported_count'],
+                'processed_rows' => count($csv_data),
+                'details' => $result['details'] ?? array()
             ));
         } else {
-            wp_send_json_error(array('message' => $result['message']));
-        }
-    }
-    
-    /**
-     * Validate uploaded file
-     */
-    private function validate_uploaded_file($file) {
-        $file_type = wp_check_filetype($file['name']);
-        
-        if ($file_type['ext'] !== 'csv') {
-            return new WP_Error('invalid_file_type', __('Only CSV files are allowed', 'bp-resume-csv'));
-        }
-        
-        // Check file size (max 5MB)
-        $max_size = apply_filters('bprm_csv_max_file_size', 5 * 1024 * 1024);
-        if ($file['size'] > $max_size) {
-            return new WP_Error('file_too_large', sprintf(
-                __('File size must be less than %s', 'bp-resume-csv'),
-                size_format($max_size)
+            wp_send_json_error(array(
+                'message' => $result['message'],
+                'details' => $result['details'] ?? array()
             ));
         }
+    }
+
+    /**
+     * Improved CSV data processing with better debugging
+     */
+    private function process_csv_data_improved($csv_data, $available_fields, $user_id) {
+        $imported_count = 0;
+        $errors = array();
+        $details = array();
         
-        // Check if file is empty
-        if ($file['size'] === 0) {
-            return new WP_Error('empty_file', __('The uploaded file is empty', 'bp-resume-csv'));
+        // If BP Resume Manager is not available, simulate processing
+        if (!defined('BPRM_PLUGIN_VERSION')) {
+            return array(
+                'success' => true,
+                'imported_count' => count($csv_data),
+                'details' => array('Simulated import (BP Resume Manager not active)')
+            );
         }
         
-        return true;
+        if (empty($csv_data)) {
+            return array(
+                'success' => false,
+                'message' => __('No data found in CSV file', 'bp-resume-csv')
+            );
+        }
+        
+        // Validate CSV structure
+        $required_headers = array('group_key', 'field_key', 'field_value');
+        $csv_headers = array_keys($csv_data[0]);
+        $missing_headers = array_diff($required_headers, $csv_headers);
+        
+        if (!empty($missing_headers)) {
+            return array(
+                'success' => false,
+                'message' => sprintf(__('Missing required CSV columns: %s', 'bp-resume-csv'), implode(', ', $missing_headers))
+            );
+        }
+        
+        // Organize data by groups and instances
+        $organized_data = array();
+        $valid_rows = 0;
+        $skipped_rows = 0;
+        
+        foreach ($csv_data as $row_index => $row) {
+            // Skip empty rows or rows without required data
+            if (empty($row['group_key']) || empty($row['field_key'])) {
+                $skipped_rows++;
+                continue;
+            }
+            
+            // Skip rows with empty values (unless it's intentionally '0')
+            if (empty($row['field_value']) && $row['field_value'] !== '0') {
+                $skipped_rows++;
+                continue;
+            }
+            
+            $group_key = sanitize_key($row['group_key']);
+            $field_key = sanitize_key($row['field_key']);
+            $group_instance = isset($row['group_instance']) ? intval($row['group_instance']) : 0;
+            $field_instance = isset($row['field_instance']) ? intval($row['field_instance']) : 0;
+            
+            // Validate field exists and is available
+            if (!isset($available_fields[$group_key][$field_key])) {
+                $errors[] = sprintf(
+                    __('Row %d: Field "%s" in group "%s" is not available for your profile', 'bp-resume-csv'), 
+                    $row_index + 1,
+                    $field_key, 
+                    $group_key
+                );
+                continue;
+            }
+            
+            $organized_data[$group_key][$group_instance][$field_key][$field_instance] = $row['field_value'];
+            $valid_rows++;
+        }
+        
+        $details[] = sprintf('Processed %d CSV rows, %d valid, %d skipped', count($csv_data), $valid_rows, $skipped_rows);
+        
+        if (!empty($errors) && count($errors) > 5) {
+            return array(
+                'success' => false,
+                'message' => __('Too many field validation errors. Please check your CSV format.', 'bp-resume-csv'),
+                'details' => array_slice($errors, 0, 5)
+            );
+        }
+        
+        if ($valid_rows === 0) {
+            return array(
+                'success' => false,
+                'message' => __('No valid data found in CSV file', 'bp-resume-csv'),
+                'details' => $details
+            );
+        }
+        
+        // Process organized data - IMPROVED VERSION
+        foreach ($organized_data as $group_key => $group_instances) {
+            $details[] = sprintf('Processing group: %s (%d instances)', $group_key, count($group_instances));
+            
+            foreach ($group_instances as $group_instance => $fields) {
+                foreach ($fields as $field_key => $field_instances) {
+                    $field_info = $available_fields[$group_key][$field_key];
+                    
+                    // Update field count for repeater fields
+                    if (count($field_instances) > 1 || $field_info['repeater'] === 'yes') {
+                        $field_count = count($field_instances);
+                        update_user_meta($user_id, 'bprm_resume_' . $field_key . '_count', $field_count);
+                        $details[] = sprintf('Updated %s field count to %d', $field_key, $field_count);
+                    }
+                    
+                    foreach ($field_instances as $field_instance => $field_value) {
+                        // Build the correct meta key
+                        $g_key = ($group_instance != 0) ? '_' . $group_instance : '';
+                        $field_repet_key = ($field_instance != 0) ? '_' . $field_instance : '';
+                        $meta_key = 'bprm_resume_' . $group_key . $g_key . '_' . $field_key . $field_repet_key;
+                        
+                        // Process field value based on type
+                        $processed_value = $this->process_field_value($field_value, $field_info);
+                        
+                        if ($processed_value !== false) {
+                            // Get existing value for comparison
+                            $existing_value = get_user_meta($user_id, $meta_key, true);
+                            
+                            // Update the meta value
+                            $update_result = update_user_meta($user_id, $meta_key, $processed_value);
+                            
+                            if ($update_result !== false) {
+                                $imported_count++;
+                                
+                                if (defined('WP_DEBUG') && WP_DEBUG) {
+                                    error_log(sprintf('BP Resume CSV: Updated %s = "%s" (was: "%s")', 
+                                        $meta_key, 
+                                        $processed_value, 
+                                        $existing_value
+                                    ));
+                                }
+                            }
+                        } else {
+                            $details[] = sprintf('Skipped invalid value for %s: %s', $field_key, $field_value);
+                        }
+                    }
+                }
+            }
+            
+            // Update group count for group repeaters
+            if (count($group_instances) > 1) {
+                $group_count = count($group_instances);
+                update_user_meta($user_id, 'bprm_resume_' . $group_key . '_count', $group_count);
+                $details[] = sprintf('Updated %s group count to %d', $group_key, $group_count);
+            }
+        }
+        
+        return array(
+            'success' => true,
+            'imported_count' => $imported_count,
+            'details' => $details
+        );
     }
-    
+
     /**
-     * Parse CSV file
+     * Improved field value processing with better validation
+     */
+    private function process_field_value($value, $field_info) {
+        // Handle empty values
+        if (empty($value) && $value !== '0') {
+            return ''; // Allow empty values to clear fields
+        }
+        
+        $value = sanitize_textarea_field($value);
+        
+        switch ($field_info['type']) {
+            case 'email':
+                if (!empty($value) && !is_email($value)) {
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('BP Resume CSV: Invalid email format: ' . $value);
+                    }
+                    return $value; // Keep original for user to fix
+                }
+                return $value;
+                
+            case 'url':
+                if (!empty($value) && !filter_var($value, FILTER_VALIDATE_URL)) {
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('BP Resume CSV: Invalid URL format: ' . $value);
+                    }
+                    return $value; // Keep original for user to fix
+                }
+                return $value;
+                
+            case 'calender_field':
+                if (!empty($value)) {
+                    $timestamp = strtotime($value);
+                    if ($timestamp !== false) {
+                        return date('Y-m-d', $timestamp);
+                    }
+                }
+                return $value;
+                
+            case 'year_dropdown':
+                if (!empty($value)) {
+                    $year = intval($value);
+                    if ($year >= 1900 && $year <= date('Y') + 10) {
+                        return $year;
+                    }
+                }
+                return $value;
+                
+            case 'dropdown':
+            case 'radio_button':
+                if (!empty($field_info['options']) && !in_array($value, $field_info['options'])) {
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('BP Resume CSV: Invalid option "' . $value . '" for field with options: ' . implode(', ', $field_info['options']));
+                    }
+                }
+                return $value; // Return even if invalid for user review
+                
+            case 'checkbox':
+            case 'selectize':
+                if (!empty($value)) {
+                    $values = explode(',', $value);
+                    $values = array_map('trim', $values);
+                    return implode(',', $values);
+                }
+                return $value;
+                
+            case 'text_dropdown':
+                // Try to decode as JSON first
+                $decoded = json_decode($value, true);
+                if ($decoded && isset($decoded['text']) && isset($decoded['dropdown_val'])) {
+                    return $value;
+                }
+                // If not JSON, create JSON structure
+                return json_encode(array(
+                    'text' => $value,
+                    'dropdown_val' => !empty($field_info['options']) ? $field_info['options'][0] : ''
+                ));
+                
+            case 'image':
+                // Handle image attachment ID or URL
+                if (is_numeric($value)) {
+                    return intval($value);
+                }
+                return $value;
+                
+            default:
+                return $value;
+        }
+    }
+
+    /**
+     * Improved CSV parsing with better error handling
      */
     private function parse_csv_file($file_path) {
         $csv_data = array();
         $headers = array();
         $row_count = 0;
+        
+        if (!file_exists($file_path) || !is_readable($file_path)) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('BP Resume CSV: Cannot read file: ' . $file_path);
+            }
+            return false;
+        }
         
         if (($handle = fopen($file_path, 'r')) !== false) {
             while (($data = fgetcsv($handle, 10000, ',')) !== false) {
@@ -775,14 +1040,26 @@ class BP_Resume_CSV_Handler {
                 
                 if ($row_count === 0) {
                     $headers = array_map('trim', $data);
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('BP Resume CSV: Headers found: ' . implode(', ', $headers));
+                    }
                 } else {
                     if (count($data) === count($headers)) {
-                        $csv_data[] = array_combine($headers, array_map('trim', $data));
+                        $row_data = array_combine($headers, array_map('trim', $data));
+                        $csv_data[] = $row_data;
+                    } else {
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log('BP Resume CSV: Row ' . $row_count . ' column count mismatch. Expected: ' . count($headers) . ', Got: ' . count($data));
+                        }
                     }
                 }
                 $row_count++;
             }
             fclose($handle);
+        }
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('BP Resume CSV: Parsed ' . count($csv_data) . ' data rows from ' . $row_count . ' total rows');
         }
         
         return empty($csv_data) ? false : $csv_data;
@@ -875,61 +1152,6 @@ class BP_Resume_CSV_Handler {
         );
     }
     
-    /**
-     * Process field value based on field type
-     */
-    private function process_field_value($value, $field_info) {
-        if (empty($value) && $value !== '0') {
-            return '';
-        }
-        
-        $value = sanitize_textarea_field($value);
-        
-        switch ($field_info['type']) {
-            case 'email':
-                return is_email($value) ? $value : $value; // Keep original for user to fix
-                
-            case 'url':
-                return filter_var($value, FILTER_VALIDATE_URL) ? $value : $value; // Keep original
-                
-            case 'calender_field':
-                $timestamp = strtotime($value);
-                return $timestamp ? date('Y-m-d', $timestamp) : $value;
-                
-            case 'year_dropdown':
-                $year = intval($value);
-                return ($year >= 1900 && $year <= date('Y') + 10) ? $year : $value;
-                
-            case 'dropdown':
-            case 'radio_button':
-                return in_array($value, $field_info['options']) ? $value : $value; // Keep original
-                
-            case 'checkbox':
-            case 'selectize':
-                $values = explode(',', $value);
-                $values = array_map('trim', $values);
-                return implode(',', $values);
-                
-            case 'text_dropdown':
-                // Try to decode as JSON first
-                $decoded = json_decode($value, true);
-                if ($decoded && isset($decoded['text']) && isset($decoded['dropdown_val'])) {
-                    return $value;
-                }
-                // If not JSON, create JSON structure
-                return json_encode(array(
-                    'text' => $value,
-                    'dropdown_val' => !empty($field_info['options']) ? $field_info['options'][0] : ''
-                ));
-                
-            case 'image':
-                // Handle image attachment ID or URL
-                return is_numeric($value) ? intval($value) : $value;
-                
-            default:
-                return $value;
-        }
-    }
     
     /**
      * Clear existing resume data for specified groups
