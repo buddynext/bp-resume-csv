@@ -1,10 +1,11 @@
 <?php
 /**
- * Enhanced CSV Handler Class
+ * Clean Enhanced CSV Handler Class - NO DUPLICATES
  * 
  * File: includes/class-bp-resume-csv-handler-enhanced.php
  * 
- * Handles all CSV import/export functionality with improved field detection
+ * Extends the base handler with enhanced field detection and debugging
+ * Replace your entire enhanced class with this clean version
  */
 
 // Exit if accessed directly
@@ -15,15 +16,17 @@ if (!defined('ABSPATH')) {
 class BP_Resume_CSV_Handler_Enhanced extends BP_Resume_CSV_Handler {
     
     /**
-     * Get user's available resume fields with enhanced detection
+     * Enhanced field detection with better caching and debugging
+     * OVERRIDES parent method with enhanced version
      */
     public function get_user_resume_fields($user_id) {
-        // Clear any cached data first
+        // Clear any cached data first for fresh results
         wp_cache_delete('bprm_resume_settings', 'options');
         wp_cache_delete('bprm_groups_settings', 'options');
         
         // Check if BP Resume Manager is available
         if (!defined('BPRM_PLUGIN_VERSION')) {
+            error_log('BP Resume CSV Enhanced: BP Resume Manager not active, using sample fields');
             return $this->get_sample_resume_fields();
         }
         
@@ -36,12 +39,14 @@ class BP_Resume_CSV_Handler_Enhanced extends BP_Resume_CSV_Handler {
             $grp_args = get_option('bprm_groups_settings');
         }
         
-        // Debug logging
-        error_log('BP Resume CSV: bprm_settings count: ' . (is_array($bprm_settings) ? count($bprm_settings) : 'not array'));
-        error_log('BP Resume CSV: grp_args count: ' . (is_array($grp_args) ? count($grp_args) : 'not array'));
+        // Enhanced debug logging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('BP Resume CSV Enhanced: bprm_settings count: ' . (is_array($bprm_settings) ? count($bprm_settings) : 'not array'));
+            error_log('BP Resume CSV Enhanced: grp_args count: ' . (is_array($grp_args) ? count($grp_args) : 'not array'));
+        }
         
         if (empty($bprm_settings) || empty($grp_args)) {
-            error_log('BP Resume CSV: Settings are empty, using sample fields');
+            error_log('BP Resume CSV Enhanced: Settings are empty, using sample fields');
             return $this->get_sample_resume_fields();
         }
         
@@ -50,25 +55,37 @@ class BP_Resume_CSV_Handler_Enhanced extends BP_Resume_CSV_Handler {
         $mem_type = function_exists('bp_get_member_type') ? bp_get_member_type($user_id) : '';
         
         $available_fields = array();
+        $total_groups_processed = 0;
+        $total_fields_found = 0;
         
         foreach ($grp_args as $group_index => $group_info) {
-            error_log('BP Resume CSV: Processing group: ' . $group_index);
+            $total_groups_processed++;
+            
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('BP Resume CSV Enhanced: Processing group: ' . $group_index);
+            }
             
             // Check if group should be displayed in resume
             if (!isset($group_info['resume_display']) || $group_info['resume_display'] !== 'yes') {
-                error_log('BP Resume CSV: Group ' . $group_index . ' not set for resume display');
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('BP Resume CSV Enhanced: Group ' . $group_index . ' not set for resume display');
+                }
                 continue;
             }
             
-            // Check group availability for user
-            if (!$this->check_group_availability($group_info, $user_role, $mem_type)) {
-                error_log('BP Resume CSV: Group ' . $group_index . ' not available for user');
+            // Enhanced group availability check
+            if (!$this->check_group_availability_enhanced($group_info, $user_role, $mem_type)) {
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('BP Resume CSV Enhanced: Group ' . $group_index . ' not available for user');
+                }
                 continue;
             }
             
             // Check if group has fields
             if (!isset($bprm_settings[$group_index]) || !is_array($bprm_settings[$group_index])) {
-                error_log('BP Resume CSV: Group ' . $group_index . ' has no fields');
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('BP Resume CSV Enhanced: Group ' . $group_index . ' has no fields');
+                }
                 continue;
             }
             
@@ -81,16 +98,21 @@ class BP_Resume_CSV_Handler_Enhanced extends BP_Resume_CSV_Handler {
                 
                 // Check if field should be displayed
                 if (!isset($field_info['display']) || $field_info['display'] !== 'yes') {
-                    error_log('BP Resume CSV: Field ' . $field_key . ' not set for display');
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('BP Resume CSV Enhanced: Field ' . $field_key . ' not set for display');
+                    }
                     continue;
                 }
                 
                 // Ensure field has required data
                 if (!isset($field_info['field_tile']) || !isset($field_info['field_type']['type'])) {
-                    error_log('BP Resume CSV: Field ' . $field_key . ' missing required data');
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('BP Resume CSV Enhanced: Field ' . $field_key . ' missing required data');
+                    }
                     continue;
                 }
                 
+                // Enhanced field data with additional properties
                 $available_fields[$group_index][$field_key] = array(
                     'title' => $field_info['field_tile'],
                     'type' => $field_info['field_type']['type'],
@@ -105,20 +127,26 @@ class BP_Resume_CSV_Handler_Enhanced extends BP_Resume_CSV_Handler {
                 );
                 
                 $group_field_count++;
+                $total_fields_found++;
             }
             
-            error_log('BP Resume CSV: Group ' . $group_index . ' has ' . $group_field_count . ' available fields');
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('BP Resume CSV Enhanced: Group ' . $group_index . ' has ' . $group_field_count . ' available fields');
+            }
         }
         
-        error_log('BP Resume CSV: Total available groups: ' . count($available_fields));
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('BP Resume CSV Enhanced: Processed ' . $total_groups_processed . ' groups, found ' . count($available_fields) . ' valid groups with ' . $total_fields_found . ' total fields');
+        }
         
         return apply_filters('bprm_csv_available_fields', $available_fields, $user_id);
     }
     
     /**
      * Enhanced group availability check with better validation
+     * NEW METHOD - not in parent class
      */
-    private function check_group_availability($group_info, $user_role, $mem_type) {
+    private function check_group_availability_enhanced($group_info, $user_role, $mem_type) {
         if (!isset($group_info['grp_avail'])) {
             return true; // No restrictions
         }
@@ -154,215 +182,74 @@ class BP_Resume_CSV_Handler_Enhanced extends BP_Resume_CSV_Handler {
     }
     
     /**
-     * Enhanced CSV structure generation with debug info
+     * Enhanced CSV processing with detailed debugging
+     * OVERRIDES parent process_csv_data_improved method
      */
-    private function generate_csv_structure($available_fields) {
-        error_log('BP Resume CSV: Generating CSV structure for ' . count($available_fields) . ' groups');
-        
-        $headers = array(
-            'group_key',
-            'group_name',
-            'group_instance',
-            'field_key',
-            'field_title',
-            'field_type',
-            'field_instance',
-            'field_value',
-            'field_options_available',
-            'field_required',
-            'field_section_title',
-            'field_section_icon'
-        );
-        
-        $sample_rows = array();
-        $total_fields = 0;
-        
-        foreach ($available_fields as $group_key => $fields) {
-            foreach ($fields as $field_key => $field_info) {
-                $total_fields++;
-                $sample_value = $this->get_sample_value_for_field_type($field_info['type'], $field_info['options']);
-                $options_text = !empty($field_info['options']) ? implode('|', $field_info['options']) : '';
-                
-                // Add main sample row
-                $sample_rows[] = array(
-                    $group_key,
-                    $field_info['group_name'],
-                    '0',
-                    $field_key,
-                    $field_info['title'],
-                    $field_info['type'],
-                    '0',
-                    $sample_value,
-                    $options_text,
-                    $field_info['required'],
-                    $field_info['section_title'],
-                    $field_info['section_icon']
-                );
-                
-                // Add sample for repeater fields
-                if ($field_info['repeater'] === 'yes') {
-                    $sample_rows[] = array(
-                        $group_key,
-                        $field_info['group_name'],
-                        '0',
-                        $field_key,
-                        $field_info['title'],
-                        $field_info['type'],
-                        '1',
-                        $sample_value,
-                        $options_text,
-                        $field_info['required'],
-                        $field_info['section_title'],
-                        $field_info['section_icon']
-                    );
-                }
-            }
-            
-            // Add sample for group repeater
-            if (!empty($fields)) {
-                $first_field = array_keys($fields)[0];
-                $first_field_info = $fields[$first_field];
-                if ($first_field_info['group_repeater'] === 'yes') {
-                    $sample_value = $this->get_sample_value_for_field_type($first_field_info['type'], $first_field_info['options']);
-                    $options_text = !empty($first_field_info['options']) ? implode('|', $first_field_info['options']) : '';
-                    
-                    $sample_rows[] = array(
-                        $group_key,
-                        $first_field_info['group_name'],
-                        '1',
-                        $first_field,
-                        $first_field_info['title'],
-                        $first_field_info['type'],
-                        '0',
-                        $sample_value,
-                        $options_text,
-                        $first_field_info['required'],
-                        $first_field_info['section_title'],
-                        $first_field_info['section_icon']
-                    );
-                }
-            }
+    protected function process_csv_data_improved($csv_data, $available_fields, $user_id) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('BP Resume CSV Enhanced: Processing ' . count($csv_data) . ' CSV rows for user ' . $user_id);
         }
-        
-        error_log('BP Resume CSV: Generated ' . count($sample_rows) . ' sample rows for ' . $total_fields . ' fields');
-        
-        return array(
-            'headers' => apply_filters('bprm_csv_headers', $headers),
-            'sample_rows' => apply_filters('bprm_csv_sample_rows', $sample_rows, $available_fields)
-        );
-    }
-    
-    /**
-     * Enhanced export data generation with debug info
-     */
-    private function generate_export_data($available_fields, $user_id) {
-        error_log('BP Resume CSV: Generating export data for user ' . $user_id);
-        
-        $headers = array(
-            'group_key',
-            'group_name',
-            'group_instance',
-            'field_key',
-            'field_title',
-            'field_type',
-            'field_instance',
-            'field_value',
-            'field_options_available',
-            'field_required',
-            'field_section_title',
-            'field_section_icon'
-        );
-        
-        $data_rows = array();
-        $exported_count = 0;
-        
-        // If BP Resume Manager is not available, use sample data
-        if (!defined('BPRM_PLUGIN_VERSION')) {
-            return $this->generate_sample_export_data($user_id);
-        }
-        
-        foreach ($available_fields as $group_key => $fields) {
-            $group_count = get_user_meta($user_id, 'bprm_resume_' . $group_key . '_count', true);
-            $group_count = ($group_count != '') ? $group_count : 1;
-            
-            error_log('BP Resume CSV: Processing group ' . $group_key . ' with ' . $group_count . ' instances');
-            
-            for ($g_instance = 0; $g_instance < $group_count; $g_instance++) {
-                foreach ($fields as $field_key => $field_info) {
-                    $field_count = get_user_meta($user_id, 'bprm_resume_' . $field_key . '_count', true);
-                    $field_count = ($field_count != '') ? $field_count : 1;
-                    
-                    for ($f_instance = 0; $f_instance < $field_count; $f_instance++) {
-                        $g_key = ($g_instance != 0) ? '_' . $g_instance : '';
-                        $field_repet_key = ($f_instance != 0) ? '_' . $f_instance : '';
-                        $meta_key = 'bprm_resume_' . $group_key . $g_key . '_' . $field_key . $field_repet_key;
-                        
-                        $field_value = get_user_meta($user_id, $meta_key, true);
-                        $options_text = !empty($field_info['options']) ? implode('|', $field_info['options']) : '';
-                        
-                        // Export all fields, even empty ones, so users can see the structure
-                        $data_rows[] = array(
-                            $group_key,
-                            $field_info['group_name'],
-                            $g_instance,
-                            $field_key,
-                            $field_info['title'],
-                            $field_info['type'],
-                            $f_instance,
-                            $field_value,
-                            $options_text,
-                            $field_info['required'],
-                            $field_info['section_title'],
-                            $field_info['section_icon']
-                        );
-                        
-                        if (!empty($field_value) || $field_value === '0') {
-                            $exported_count++;
-                        }
-                    }
-                }
-            }
-        }
-        
-        error_log('BP Resume CSV: Exported ' . count($data_rows) . ' total rows, ' . $exported_count . ' with data');
-        
-        return array(
-            'headers' => $headers,
-            'data_rows' => $data_rows
-        );
-    }
-    
-    /**
-     * Enhanced CSV processing with better error handling
-     */
-    private function process_csv_data($csv_data, $available_fields, $user_id) {
-        error_log('BP Resume CSV: Processing ' . count($csv_data) . ' CSV rows for user ' . $user_id);
         
         $imported_count = 0;
         $errors = array();
+        $details = array();
         
         // If BP Resume Manager is not available, simulate processing
         if (!defined('BPRM_PLUGIN_VERSION')) {
             return array(
                 'success' => true,
-                'imported_count' => count($csv_data)
+                'imported_count' => count($csv_data),
+                'details' => array('Simulated import (BP Resume Manager not active)')
+            );
+        }
+        
+        if (empty($csv_data)) {
+            return array(
+                'success' => false,
+                'message' => __('No data found in CSV file', 'bp-resume-csv')
+            );
+        }
+        
+        // Validate CSV structure
+        $required_headers = array('group_key', 'field_key', 'field_value');
+        $csv_headers = array_keys($csv_data[0]);
+        $missing_headers = array_diff($required_headers, $csv_headers);
+        
+        if (!empty($missing_headers)) {
+            return array(
+                'success' => false,
+                'message' => sprintf(__('Missing required CSV columns: %s. Available columns: %s', 'bp-resume-csv'), 
+                    implode(', ', $missing_headers),
+                    implode(', ', $csv_headers)
+                )
             );
         }
         
         // Organize data by groups and instances
         $organized_data = array();
         $valid_rows = 0;
+        $skipped_rows = 0;
         
         foreach ($csv_data as $row_index => $row) {
+            // Skip empty rows or rows without required data
             if (empty($row['group_key']) || empty($row['field_key'])) {
-                error_log('BP Resume CSV: Row ' . $row_index . ' missing group_key or field_key');
+                $skipped_rows++;
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('BP Resume CSV Enhanced: Row ' . $row_index . ' missing group_key or field_key');
+                }
+                continue;
+            }
+            
+            // Skip rows with empty values (unless it's intentionally '0')
+            if (empty($row['field_value']) && $row['field_value'] !== '0') {
+                $skipped_rows++;
                 continue;
             }
             
             $group_key = sanitize_key($row['group_key']);
             $field_key = sanitize_key($row['field_key']);
-            $group_instance = intval($row['group_instance']);
-            $field_instance = intval($row['field_instance']);
+            $group_instance = isset($row['group_instance']) ? intval($row['group_instance']) : 0;
+            $field_instance = isset($row['field_instance']) ? intval($row['field_instance']) : 0;
             
             // Validate field exists and is available
             if (!isset($available_fields[$group_key][$field_key])) {
@@ -379,66 +266,207 @@ class BP_Resume_CSV_Handler_Enhanced extends BP_Resume_CSV_Handler {
             $valid_rows++;
         }
         
-        error_log('BP Resume CSV: Processed ' . $valid_rows . ' valid rows, ' . count($errors) . ' errors');
+        $details[] = sprintf('Processed %d CSV rows, %d valid, %d skipped', count($csv_data), $valid_rows, $skipped_rows);
         
-        if (!empty($errors)) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('BP Resume CSV Enhanced: Processed ' . $valid_rows . ' valid rows, ' . count($errors) . ' errors');
+        }
+        
+        if (!empty($errors) && count($errors) > 5) {
             return array(
                 'success' => false,
-                'message' => implode('\n', array_slice($errors, 0, 10)) // Limit error messages
+                'message' => __('Too many field validation errors. Please check your CSV format.', 'bp-resume-csv'),
+                'details' => array_slice($errors, 0, 5)
             );
         }
         
         if ($valid_rows === 0) {
             return array(
                 'success' => false,
-                'message' => __('No valid data found in CSV file', 'bp-resume-csv')
+                'message' => __('No valid data found in CSV file', 'bp-resume-csv'),
+                'details' => $details
             );
         }
         
-        // Clear existing data first for groups being imported
-        $this->clear_existing_resume_data($user_id, array_keys($organized_data));
-        
-        // Process organized data
+        // Process organized data with enhanced logging
         foreach ($organized_data as $group_key => $group_instances) {
+            $details[] = sprintf('Processing group: %s (%d instances)', $group_key, count($group_instances));
+            
             foreach ($group_instances as $group_instance => $fields) {
                 foreach ($fields as $field_key => $field_instances) {
                     $field_info = $available_fields[$group_key][$field_key];
                     
-                    // Update field count
-                    $field_count = count($field_instances);
-                    update_user_meta($user_id, 'bprm_resume_' . $field_key . '_count', $field_count);
+                    // Update field count for repeater fields
+                    if (count($field_instances) > 1 || (isset($field_info['repeater']) && $field_info['repeater'] === 'yes')) {
+                        $field_count = count($field_instances);
+                        update_user_meta($user_id, 'bprm_resume_' . $field_key . '_count', $field_count);
+                        $details[] = sprintf('Updated %s field count to %d', $field_key, $field_count);
+                    }
                     
                     foreach ($field_instances as $field_instance => $field_value) {
+                        // Build the correct meta key
                         $g_key = ($group_instance != 0) ? '_' . $group_instance : '';
                         $field_repet_key = ($field_instance != 0) ? '_' . $field_instance : '';
                         $meta_key = 'bprm_resume_' . $group_key . $g_key . '_' . $field_key . $field_repet_key;
                         
                         // Process field value based on type
-                        $processed_value = $this->process_field_value($field_value, $field_info);
+                        $processed_value = $this->process_field_value_enhanced($field_value, $field_info);
                         
                         if ($processed_value !== false) {
-                            update_user_meta($user_id, $meta_key, $processed_value);
-                            $imported_count++;
-                            error_log('BP Resume CSV: Imported ' . $meta_key . ' = ' . $processed_value);
+                            // Get existing value for comparison
+                            $existing_value = get_user_meta($user_id, $meta_key, true);
+                            
+                            // Update the meta value
+                            $update_result = update_user_meta($user_id, $meta_key, $processed_value);
+                            
+                            if ($update_result !== false) {
+                                $imported_count++;
+                                
+                                if (defined('WP_DEBUG') && WP_DEBUG) {
+                                    error_log(sprintf('BP Resume CSV Enhanced: Updated %s = "%s" (was: "%s")', 
+                                        $meta_key, 
+                                        $processed_value, 
+                                        $existing_value
+                                    ));
+                                }
+                            }
+                        } else {
+                            $details[] = sprintf('Skipped invalid value for %s: %s', $field_key, $field_value);
                         }
                     }
                 }
             }
             
-            // Update group count
-            $group_count = count($group_instances);
-            update_user_meta($user_id, 'bprm_resume_' . $group_key . '_count', $group_count);
-            error_log('BP Resume CSV: Updated ' . $group_key . ' count to ' . $group_count);
+            // Update group count for group repeaters
+            if (count($group_instances) > 1) {
+                $group_count = count($group_instances);
+                update_user_meta($user_id, 'bprm_resume_' . $group_key . '_count', $group_count);
+                $details[] = sprintf('Updated %s group count to %d', $group_key, $group_count);
+                
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('BP Resume CSV Enhanced: Updated ' . $group_key . ' count to ' . $group_count);
+                }
+            }
         }
         
         return array(
             'success' => true,
-            'imported_count' => $imported_count
+            'imported_count' => $imported_count,
+            'details' => $details
         );
     }
     
     /**
+     * Enhanced field value processing with better validation and debugging
+     * NEW METHOD - extends parent functionality
+     */
+    private function process_field_value_enhanced($value, $field_info) {
+        // Handle empty values
+        if (empty($value) && $value !== '0') {
+            return ''; // Allow empty values to clear fields
+        }
+        
+        $value = sanitize_textarea_field($value);
+        $original_value = $value; // Keep original for logging
+        
+        switch ($field_info['type']) {
+            case 'email':
+                if (!empty($value) && !is_email($value)) {
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('BP Resume CSV Enhanced: Invalid email format: ' . $value);
+                    }
+                    return $value; // Keep original for user to fix
+                }
+                return $value;
+                
+            case 'url':
+                if (!empty($value) && !filter_var($value, FILTER_VALIDATE_URL)) {
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('BP Resume CSV Enhanced: Invalid URL format: ' . $value);
+                    }
+                    return $value; // Keep original for user to fix
+                }
+                return $value;
+                
+            case 'calender_field':
+                if (!empty($value)) {
+                    $timestamp = strtotime($value);
+                    if ($timestamp !== false) {
+                        $formatted_date = date('Y-m-d', $timestamp);
+                        if (defined('WP_DEBUG') && WP_DEBUG && $formatted_date !== $original_value) {
+                            error_log('BP Resume CSV Enhanced: Converted date "' . $original_value . '" to "' . $formatted_date . '"');
+                        }
+                        return $formatted_date;
+                    }
+                }
+                return $value;
+                
+            case 'year_dropdown':
+                if (!empty($value)) {
+                    $year = intval($value);
+                    if ($year >= 1900 && $year <= date('Y') + 10) {
+                        return $year;
+                    } else {
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log('BP Resume CSV Enhanced: Invalid year: ' . $value . ' (must be between 1900 and ' . (date('Y') + 10) . ')');
+                        }
+                    }
+                }
+                return $value;
+                
+            case 'dropdown':
+            case 'radio_button':
+                if (!empty($field_info['options']) && !in_array($value, $field_info['options'])) {
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('BP Resume CSV Enhanced: Invalid option "' . $value . '" for field with options: ' . implode(', ', $field_info['options']));
+                    }
+                }
+                return $value; // Return even if invalid for user review
+                
+            case 'checkbox':
+            case 'selectize':
+                if (!empty($value)) {
+                    $values = explode(',', $value);
+                    $values = array_map('trim', $values);
+                    $processed = implode(',', $values);
+                    if (defined('WP_DEBUG') && WP_DEBUG && $processed !== $original_value) {
+                        error_log('BP Resume CSV Enhanced: Processed multi-value field "' . $original_value . '" to "' . $processed . '"');
+                    }
+                    return $processed;
+                }
+                return $value;
+                
+            case 'text_dropdown':
+                // Try to decode as JSON first
+                $decoded = json_decode($value, true);
+                if ($decoded && isset($decoded['text']) && isset($decoded['dropdown_val'])) {
+                    return $value;
+                }
+                // If not JSON, create JSON structure
+                $json_value = json_encode(array(
+                    'text' => $value,
+                    'dropdown_val' => !empty($field_info['options']) ? $field_info['options'][0] : ''
+                ));
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('BP Resume CSV Enhanced: Converted text+dropdown "' . $original_value . '" to JSON: ' . $json_value);
+                }
+                return $json_value;
+                
+            case 'image':
+                // Handle image attachment ID or URL
+                if (is_numeric($value)) {
+                    return intval($value);
+                }
+                return $value;
+                
+            default:
+                return $value;
+        }
+    }
+    
+    /**
      * Debug method to show current resume settings
+     * NEW METHOD - not in parent class
      */
     public function debug_resume_settings($user_id = null) {
         if (!$user_id) {
@@ -448,17 +476,115 @@ class BP_Resume_CSV_Handler_Enhanced extends BP_Resume_CSV_Handler {
         $available_fields = $this->get_user_resume_fields($user_id);
         
         echo '<pre>';
-        echo "=== BP Resume CSV Debug Info ===\n";
+        echo "=== BP Resume CSV Enhanced Debug Info ===\n";
         echo "User ID: " . $user_id . "\n";
-        echo "Available Fields Count: " . count($available_fields) . "\n\n";
+        echo "BP Resume Manager Version: " . (defined('BPRM_PLUGIN_VERSION') ? BPRM_PLUGIN_VERSION : 'Not Active') . "\n";
+        echo "Available Groups: " . count($available_fields) . "\n";
+        echo "Enhanced Handler: Active\n\n";
         
+        $total_fields = 0;
         foreach ($available_fields as $group_key => $fields) {
             echo "Group: " . $group_key . " (" . count($fields) . " fields)\n";
             foreach ($fields as $field_key => $field_info) {
-                echo "  - " . $field_key . ": " . $field_info['title'] . " (" . $field_info['type'] . ")\n";
+                echo "  - " . $field_key . ": " . $field_info['title'] . " (" . $field_info['type'] . ")";
+                if ($field_info['repeater'] === 'yes') {
+                    echo " [REPEATER]";
+                }
+                if ($field_info['required'] === 'yes') {
+                    echo " [REQUIRED]";
+                }
+                echo "\n";
+                $total_fields++;
             }
             echo "\n";
         }
+        
+        echo "Total Fields: " . $total_fields . "\n";
+        echo "=== End Debug Info ===\n";
         echo '</pre>';
+    }
+    
+    /**
+     * Enhanced field statistics with more detailed information
+     * OVERRIDES parent method
+     */
+    public function get_field_statistics($user_id) {
+        $available_fields = $this->get_user_resume_fields($user_id);
+        $total_fields = 0;
+        $filled_fields = 0;
+        $required_fields = 0;
+        $filled_required_fields = 0;
+        
+        if (defined('BPRM_PLUGIN_VERSION')) {
+            foreach ($available_fields as $group_key => $fields) {
+                foreach ($fields as $field_key => $field_info) {
+                    $total_fields++;
+                    
+                    if (isset($field_info['required']) && $field_info['required'] === 'yes') {
+                        $required_fields++;
+                    }
+                    
+                    // Check if field has data
+                    $meta_key = 'bprm_resume_' . $group_key . '_' . $field_key;
+                    $field_value = get_user_meta($user_id, $meta_key, true);
+                    
+                    if (!empty($field_value)) {
+                        $filled_fields++;
+                        if (isset($field_info['required']) && $field_info['required'] === 'yes') {
+                            $filled_required_fields++;
+                        }
+                    }
+                }
+            }
+        } else {
+            // Sample data for demo
+            $total_fields = 25;
+            $filled_fields = 8;
+            $required_fields = 10;
+            $filled_required_fields = 6;
+        }
+        
+        return array(
+            'total_fields' => $total_fields,
+            'filled_fields' => $filled_fields,
+            'required_fields' => $required_fields,
+            'filled_required_fields' => $filled_required_fields,
+            'completion_percentage' => $total_fields > 0 ? round(($filled_fields / $total_fields) * 100) : 0,
+            'required_completion_percentage' => $required_fields > 0 ? round(($filled_required_fields / $required_fields) * 100) : 0
+        );
+    }
+    
+    /**
+     * Get detailed field mapping for debugging
+     * NEW METHOD - not in parent class
+     */
+    public function get_detailed_field_mapping($user_id = null) {
+        if (!$user_id) {
+            $user_id = get_current_user_id();
+        }
+        
+        $available_fields = $this->get_user_resume_fields($user_id);
+        $field_mapping = array();
+        
+        foreach ($available_fields as $group_key => $fields) {
+            foreach ($fields as $field_key => $field_info) {
+                $meta_key = 'bprm_resume_' . $group_key . '_' . $field_key;
+                $current_value = get_user_meta($user_id, $meta_key, true);
+                
+                $field_mapping[] = array(
+                    'group_key' => $group_key,
+                    'field_key' => $field_key,
+                    'field_title' => $field_info['title'],
+                    'field_type' => $field_info['type'],
+                    'required' => $field_info['required'],
+                    'repeater' => $field_info['repeater'],
+                    'meta_key' => $meta_key,
+                    'current_value' => $current_value,
+                    'has_value' => !empty($current_value)
+                );
+            }
+        }
+        
+        return $field_mapping;
     }
 }
