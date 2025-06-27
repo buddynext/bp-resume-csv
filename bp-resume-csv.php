@@ -49,9 +49,11 @@ class BP_Resume_CSV_Plugin {
      */
     private function __construct() {
         add_action('plugins_loaded', array($this, 'init'), 15);
-        register_activation_hook(__FILE__, array($this, 'activation_check'));
         register_activation_hook(__FILE__, array($this, 'on_activation'));
         register_deactivation_hook(__FILE__, array($this, 'on_deactivation'));
+        
+        // Add dependency check hook
+        add_action('admin_init', array($this, 'check_dependencies_and_deactivate'));
     }
     
     /**
@@ -78,7 +80,7 @@ class BP_Resume_CSV_Plugin {
     }
     
     /**
-     * Check plugin dependencies - CORRECTED VERSION
+     * Check plugin dependencies
      */
     private function check_dependencies() {
         // Check BuddyPress
@@ -88,6 +90,23 @@ class BP_Resume_CSV_Plugin {
         $bp_resume_active = defined('BPRM_PLUGIN_VERSION');
         
         return $buddypress_active && $bp_resume_active;
+    }
+    
+    /**
+     * Check dependencies and deactivate if missing (admin only)
+     */
+    public function check_dependencies_and_deactivate() {
+        if (!current_user_can('activate_plugins')) {
+            return;
+        }
+        
+        if (!$this->check_dependencies()) {
+            // Deactivate the plugin
+            deactivate_plugins(plugin_basename(__FILE__));
+            
+            // Add admin notice
+            add_action('admin_notices', array($this, 'deactivation_notice'));
+        }
     }
     
     /**
@@ -184,36 +203,16 @@ class BP_Resume_CSV_Plugin {
     }
     
     /**
-     * Activation check - CORRECTED VERSION
-     */
-    public function activation_check() {
-        if (!$this->check_dependencies()) {
-            $missing = array();
-            
-            if (!class_exists('BuddyPress')) {
-                $missing[] = 'BuddyPress';
-            }
-            
-            if (!defined('BPRM_PLUGIN_VERSION')) {
-                $missing[] = 'BP Resume Manager';
-            }
-            
-            deactivate_plugins(plugin_basename(__FILE__));
-            wp_die(
-                sprintf(
-                    'BP Resume CSV Import/Export requires %s to be installed and activated.',
-                    implode(' and ', $missing)
-                ),
-                'Plugin Activation Error',
-                array('back_link' => true)
-            );
-        }
-    }
-    
-    /**
      * On activation
      */
     public function on_activation() {
+        // Check dependencies on activation
+        if (!$this->check_dependencies()) {
+            // Set a transient to show error message
+            set_transient('bp_resume_csv_activation_error', true, 30);
+            return;
+        }
+        
         // Set activation flag for admin notice
         set_transient('bp_resume_csv_activated', true, 30);
         
@@ -239,6 +238,7 @@ class BP_Resume_CSV_Plugin {
     public function on_deactivation() {
         // Clear transients
         delete_transient('bp_resume_csv_activated');
+        delete_transient('bp_resume_csv_activation_error');
         
         // Clear any caches
         wp_cache_flush();
@@ -266,7 +266,7 @@ class BP_Resume_CSV_Plugin {
     }
     
     /**
-     * Admin notice for missing dependencies - CORRECTED VERSION
+     * Admin notice for missing dependencies
      */
     public function dependency_notice() {
         $missing = array();
@@ -281,11 +281,38 @@ class BP_Resume_CSV_Plugin {
         
         if (!empty($missing)) {
             ?>
-            <div class="notice notice-error">
+            <div class="notice notice-warning is-dismissible">
                 <p>
                     <strong>BP Resume CSV Import/Export:</strong> 
                     <?php echo implode(' and ', $missing); ?>. 
-                    Please install and activate the required plugins.
+                    Plugin functionality is disabled until required plugins are activated.
+                </p>
+            </div>
+            <?php
+        }
+    }
+    
+    /**
+     * Deactivation notice
+     */
+    public function deactivation_notice() {
+        $missing = array();
+        
+        if (!class_exists('BuddyPress')) {
+            $missing[] = 'BuddyPress';
+        }
+        
+        if (!defined('BPRM_PLUGIN_VERSION')) {
+            $missing[] = 'BP Resume Manager';
+        }
+        
+        if (!empty($missing)) {
+            ?>
+            <div class="notice notice-error">
+                <p>
+                    <strong>BP Resume CSV Import/Export has been deactivated!</strong><br>
+                    This plugin requires <?php echo implode(' and ', $missing); ?> to be installed and activated.
+                    Please install the required plugins and reactivate this plugin.
                 </p>
             </div>
             <?php
@@ -447,6 +474,7 @@ register_uninstall_hook(__FILE__, function() {
     
     // Clean up transients
     delete_transient('bp_resume_csv_activated');
+    delete_transient('bp_resume_csv_activation_error');
     
     // Clean up upload directory
     $upload_dir = wp_upload_dir();
