@@ -506,38 +506,55 @@ class BP_Resume_CSV_Handler {
     
     /**
      * Process CSV upload - FIXED VERSION
+     * Replace the existing process_csv_upload method with this one
      */
     public function process_csv_upload() {
+        error_log('CSV Upload: Starting process_csv_upload');
+        
         if (!wp_verify_nonce($_POST['nonce'] ?? '', 'bprm_csv_nonce') || !is_user_logged_in()) {
+            error_log('CSV Upload: Security check failed');
             wp_send_json_error(array('message' => __('Security check failed', 'bp-resume-csv')));
         }
         
         if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+            error_log('CSV Upload: File upload error - ' . ($_FILES['csv_file']['error'] ?? 'No file'));
             wp_send_json_error(array('message' => __('Please upload a valid CSV file', 'bp-resume-csv')));
         }
         
         $file = $_FILES['csv_file'];
+        error_log('CSV Upload: File details - Name: ' . $file['name'] . ', Size: ' . $file['size'] . ', Type: ' . $file['type']);
+        
         $validation_result = $this->validate_uploaded_file($file);
         if (is_wp_error($validation_result)) {
+            error_log('CSV Upload: File validation failed - ' . $validation_result->get_error_message());
             wp_send_json_error(array('message' => $validation_result->get_error_message()));
         }
         
         $user_id = get_current_user_id();
         $available_fields = $this->get_user_resume_fields($user_id);
+        error_log('CSV Upload: Available fields groups: ' . count($available_fields));
         
         $csv_data = $this->parse_csv_file($file['tmp_name']);
         if ($csv_data === false) {
+            error_log('CSV Upload: Failed to parse CSV file');
             wp_send_json_error(array('message' => __('Error reading CSV file. Please check the file format.', 'bp-resume-csv')));
+        }
+        
+        error_log('CSV Upload: Parsed ' . count($csv_data) . ' rows');
+        if (!empty($csv_data)) {
+            error_log('CSV Upload: First row headers: ' . implode(', ', array_keys($csv_data[0])));
         }
         
         $result = $this->process_csv_data_improved($csv_data, $available_fields, $user_id);
         
         if ($result['success']) {
+            error_log('CSV Upload: Success - ' . $result['imported_count'] . ' fields imported');
             wp_send_json_success(array(
                 'message' => sprintf(__('Resume data imported successfully! %d fields updated.', 'bp-resume-csv'), $result['imported_count']),
                 'imported_count' => $result['imported_count']
             ));
         } else {
+            error_log('CSV Upload: Failed - ' . $result['message']);
             wp_send_json_error(array('message' => $result['message']));
         }
     }
@@ -546,10 +563,15 @@ class BP_Resume_CSV_Handler {
      * Process CSV data - SINGLE IMPROVED VERSION
      */
     private function process_csv_data_improved($csv_data, $available_fields, $user_id) {
+        error_log('CSV Process: Starting data processing for user ' . $user_id);
+        error_log('CSV Process: Processing ' . count($csv_data) . ' rows');
+        error_log('CSV Process: Available field groups: ' . count($available_fields));
+        
         $imported_count = 0;
         $errors = array();
         
         if (!defined('BPRM_PLUGIN_VERSION')) {
+            error_log('CSV Process: BP Resume Manager not active, simulating import');
             return array('success' => true, 'imported_count' => count($csv_data));
         }
         
@@ -557,21 +579,34 @@ class BP_Resume_CSV_Handler {
             return array('success' => false, 'message' => __('No data found in CSV file', 'bp-resume-csv'));
         }
         
-        // Validate required headers
+        // Validate required headers exist in data
+        $first_row = $csv_data[0];
+        $csv_headers = array_keys($first_row);
         $required_headers = array('group_key', 'field_key', 'field_value');
-        $csv_headers = array_keys($csv_data[0]);
         $missing_headers = array_diff($required_headers, $csv_headers);
         
         if (!empty($missing_headers)) {
+            error_log('CSV Process: Missing headers in data: ' . implode(', ', $missing_headers));
+            error_log('CSV Process: Available headers: ' . implode(', ', $csv_headers));
             return array(
                 'success' => false,
-                'message' => sprintf(__('Missing required CSV columns: %s', 'bp-resume-csv'), implode(', ', $missing_headers))
+                'message' => sprintf(__('Missing required CSV columns: %s. Available columns: %s', 'bp-resume-csv'), 
+                    implode(', ', $missing_headers),
+                    implode(', ', $csv_headers)
+                )
             );
         }
         
         // Process each row
-        foreach ($csv_data as $row) {
-            if (empty($row['group_key']) || empty($row['field_key']) || (empty($row['field_value']) && $row['field_value'] !== '0')) {
+        foreach ($csv_data as $row_index => $row) {
+            if (empty($row['group_key']) || empty($row['field_key'])) {
+                error_log('CSV Process: Row ' . $row_index . ' missing group_key or field_key');
+                continue;
+            }
+            
+            // Allow empty values to clear fields
+            if (!isset($row['field_value'])) {
+                error_log('CSV Process: Row ' . $row_index . ' missing field_value column');
                 continue;
             }
             
@@ -580,7 +615,11 @@ class BP_Resume_CSV_Handler {
             $group_instance = isset($row['group_instance']) ? intval($row['group_instance']) : 0;
             $field_instance = isset($row['field_instance']) ? intval($row['field_instance']) : 0;
             
+            // Check if field is available
             if (!isset($available_fields[$group_key][$field_key])) {
+                $errors[] = sprintf('Row %d: Field "%s" in group "%s" not available', 
+                    $row_index + 1, $field_key, $group_key);
+                error_log('CSV Process: Field not available - ' . $group_key . '.' . $field_key);
                 continue;
             }
             
@@ -592,11 +631,23 @@ class BP_Resume_CSV_Handler {
             $processed_value = $this->process_field_value($row['field_value'], $field_info);
             
             if ($processed_value !== false) {
-                update_user_meta($user_id, $meta_key, $processed_value);
-                $imported_count++;
+                $update_result = update_user_meta($user_id, $meta_key, $processed_value);
+                if ($update_result !== false) {
+                    $imported_count++;
+                    error_log('CSV Process: Updated ' . $meta_key . ' = "' . $processed_value . '"');
+                }
             }
         }
         
+        // Log errors if any
+        if (!empty($errors)) {
+            error_log('CSV Process: Errors encountered: ' . implode('; ', $errors));
+            if (count($errors) > 10) {
+                return array('success' => false, 'message' => __('Too many validation errors. Please check your CSV format.', 'bp-resume-csv'));
+            }
+        }
+        
+        error_log('CSV Process: Successfully imported ' . $imported_count . ' fields');
         return array('success' => true, 'imported_count' => $imported_count);
     }
     
@@ -630,36 +681,91 @@ class BP_Resume_CSV_Handler {
      * Parse CSV file
      */
     private function parse_csv_file($file_path) {
+        error_log('CSV Parse: Starting to parse file: ' . $file_path);
+        
         $csv_data = array();
         $headers = array();
         $row_count = 0;
         
         if (!file_exists($file_path) || !is_readable($file_path)) {
+            error_log('CSV Parse: File does not exist or is not readable');
             return false;
         }
         
-        if (($handle = fopen($file_path, 'r')) !== false) {
-            while (($data = fgetcsv($handle, 10000, ',')) !== false) {
-                if (isset($data[0]) && strpos($data[0], '#') === 0) {
-                    continue;
-                }
-                
-                if (empty(array_filter($data))) {
-                    continue;
-                }
-                
-                if ($row_count === 0) {
-                    $headers = array_map('trim', $data);
-                } else {
-                    if (count($data) === count($headers)) {
-                        $csv_data[] = array_combine($headers, array_map('trim', $data));
-                    }
-                }
-                $row_count++;
-            }
-            fclose($handle);
+        // Read file content and check encoding
+        $file_content = file_get_contents($file_path);
+        if ($file_content === false) {
+            error_log('CSV Parse: Failed to read file content');
+            return false;
         }
         
+        // Handle different line endings
+        $file_content = str_replace(array("\r\n", "\r"), "\n", $file_content);
+        
+        // Remove BOM if present
+        if (substr($file_content, 0, 3) === "\xEF\xBB\xBF") {
+            $file_content = substr($file_content, 3);
+            error_log('CSV Parse: Removed BOM from file');
+        }
+        
+        // Split into lines
+        $lines = explode("\n", $file_content);
+        error_log('CSV Parse: Total lines in file: ' . count($lines));
+        
+        foreach ($lines as $line_number => $line) {
+            $line = trim($line);
+            
+            // Skip empty lines
+            if (empty($line)) {
+                continue;
+            }
+            
+            // Skip comment lines (starting with #)
+            if (strpos($line, '#') === 0) {
+                error_log('CSV Parse: Skipping comment line ' . ($line_number + 1));
+                continue;
+            }
+            
+            // Parse CSV line
+            $data = str_getcsv($line, ',', '"', '\\');
+            
+            // Skip lines with no data
+            if (empty(array_filter($data))) {
+                continue;
+            }
+            
+            if ($row_count === 0) {
+                // First data row should be headers
+                $headers = array_map('trim', $data);
+                error_log('CSV Parse: Headers found: ' . implode(', ', $headers));
+                
+                // Validate required headers
+                $required_headers = array('group_key', 'field_key', 'field_value');
+                $missing_headers = array_diff($required_headers, $headers);
+                
+                if (!empty($missing_headers)) {
+                    error_log('CSV Parse: Missing required headers: ' . implode(', ', $missing_headers));
+                    error_log('CSV Parse: Available headers: ' . implode(', ', $headers));
+                    return false;
+                }
+                
+            } else {
+                // Data rows
+                if (count($data) === count($headers)) {
+                    $row_data = array_combine($headers, array_map('trim', $data));
+                    $csv_data[] = $row_data;
+                    
+                    if ($row_count <= 3) { // Log first few rows for debugging
+                        error_log('CSV Parse: Row ' . $row_count . ' data: ' . json_encode($row_data));
+                    }
+                } else {
+                    error_log('CSV Parse: Row ' . ($line_number + 1) . ' has ' . count($data) . ' columns, expected ' . count($headers));
+                }
+            }
+            $row_count++;
+        }
+        
+        error_log('CSV Parse: Successfully parsed ' . count($csv_data) . ' data rows');
         return empty($csv_data) ? false : $csv_data;
     }
     
@@ -667,21 +773,50 @@ class BP_Resume_CSV_Handler {
      * Validate uploaded file
      */
     private function validate_uploaded_file($file) {
-        $file_type = wp_check_filetype($file['name']);
+        // Check file extension
+        $file_parts = pathinfo($file['name']);
+        $extension = strtolower($file_parts['extension'] ?? '');
         
-        if ($file_type['ext'] !== 'csv') {
-            return new WP_Error('invalid_file_type', __('Only CSV files are allowed', 'bp-resume-csv'));
+        if ($extension !== 'csv') {
+            return new WP_Error('invalid_file_type', __('Only CSV files are allowed. Uploaded file has extension: ', 'bp-resume-csv') . $extension);
         }
         
+        // Check MIME type
+        $allowed_mimes = array('text/csv', 'text/plain', 'application/csv');
+        $file_type = wp_check_filetype($file['name']);
+        
+        if (!in_array($file['type'], $allowed_mimes) && $file_type['type'] !== 'text/csv') {
+            error_log('CSV Upload: Invalid MIME type - ' . $file['type'] . ', expected one of: ' . implode(', ', $allowed_mimes));
+            // Don't fail on MIME type alone, as it can be inconsistent
+        }
+        
+        // Check file size
         $max_size = 5 * 1024 * 1024; // 5MB
         if ($file['size'] > $max_size) {
-            return new WP_Error('file_too_large', sprintf(__('File size must be less than %s', 'bp-resume-csv'), size_format($max_size)));
+            return new WP_Error('file_too_large', sprintf(__('File size must be less than %s. Uploaded file is %s', 'bp-resume-csv'), 
+                size_format($max_size), 
+                size_format($file['size'])
+            ));
         }
         
         if ($file['size'] === 0) {
             return new WP_Error('empty_file', __('The uploaded file is empty', 'bp-resume-csv'));
         }
         
+        // Try to read first few bytes to ensure it's readable
+        $handle = fopen($file['tmp_name'], 'r');
+        if (!$handle) {
+            return new WP_Error('unreadable_file', __('Cannot read the uploaded file', 'bp-resume-csv'));
+        }
+        
+        $first_line = fgets($handle);
+        fclose($handle);
+        
+        if ($first_line === false) {
+            return new WP_Error('empty_content', __('The uploaded file appears to be empty or corrupted', 'bp-resume-csv'));
+        }
+        
+        error_log('CSV Upload: File validation passed. First line: ' . substr($first_line, 0, 100));
         return true;
     }
     
