@@ -73,6 +73,9 @@ class BP_Resume_CSV_Plugin {
         
         // Hook into BP Resume Manager
         $this->integrate_with_bp_resume();
+        
+        // Load enhanced functionality
+        $this->load_enhanced_functionality();
     }
     
     /**
@@ -114,6 +117,29 @@ class BP_Resume_CSV_Plugin {
         if (is_admin()) {
             new BP_Resume_CSV_Admin();
         }
+    }
+    
+    /**
+     * Load enhanced functionality
+     */
+    private function load_enhanced_functionality() {
+        // Load enhanced handler if BP Resume Manager is available
+        if (defined('BPRM_PLUGIN_VERSION') && file_exists(BP_RESUME_CSV_PLUGIN_PATH . 'includes/class-bp-resume-csv-handler-enhanced.php')) {
+            require_once BP_RESUME_CSV_PLUGIN_PATH . 'includes/class-bp-resume-csv-handler-enhanced.php';
+        }
+        
+        // Initialize enhanced admin notices
+        add_action('admin_notices', array($this, 'enhanced_admin_notices'));
+        
+        // Add cache clearing functionality
+        add_action('update_option_bprm_resume_settings', array($this, 'clear_field_cache'));
+        add_action('update_option_bprm_groups_settings', array($this, 'clear_field_cache'));
+        add_action('update_site_option_bprm_resume_settings', array($this, 'clear_field_cache'));
+        add_action('update_site_option_bprm_groups_settings', array($this, 'clear_field_cache'));
+        
+        // Add debug functionality
+        add_action('init', array($this, 'handle_debug_requests'));
+        add_action('wp_ajax_bprm_debug_fields', array($this, 'debug_fields_ajax'));
     }
     
     /**
@@ -165,18 +191,29 @@ class BP_Resume_CSV_Plugin {
     }
     
     /**
-     * CSV import content
+     * CSV import content - Enhanced version
      */
     public function csv_import_content() {
         // Ensure scripts are enqueued for this specific page
         $this->enqueue_csv_scripts();
         
-        $csv_handler = new BP_Resume_CSV_Handler();
-        $csv_handler->render_csv_interface();
+        // Use enhanced handler if available
+        if (class_exists('BP_Resume_CSV_Handler_Enhanced')) {
+            $csv_handler = new BP_Resume_CSV_Handler_Enhanced();
+        } else {
+            $csv_handler = new BP_Resume_CSV_Handler();
+        }
+        
+        // Check if we should use enhanced template
+        if (file_exists(BP_RESUME_CSV_PLUGIN_PATH . 'templates/csv-interface-enhanced.php')) {
+            include BP_RESUME_CSV_PLUGIN_PATH . 'templates/csv-interface-enhanced.php';
+        } else {
+            $csv_handler->render_csv_interface();
+        }
     }
     
     /**
-     * Ensure CSV scripts are enqueued
+     * Ensure CSV scripts are enqueued - Enhanced version
      */
     private function enqueue_csv_scripts() {
         // Force enqueue scripts if not already done
@@ -208,6 +245,178 @@ class BP_Resume_CSV_Plugin {
                     'confirm_import' => __('Importing CSV data will replace your existing resume information. Make sure you have exported your current data if you want to keep a backup. Do you want to continue?', 'bp-resume-csv'),
                 )
             ));
+        }
+    }
+    
+    /**
+     * Enhanced admin notices for field detection issues
+     */
+    public function enhanced_admin_notices() {
+        $screen = get_current_screen();
+        
+        // Only show on relevant admin pages
+        if (!$screen || strpos($screen->id, 'bp-resume-csv') === false) {
+            return;
+        }
+        
+        // Check if BP Resume Manager is active
+        if (!defined('BPRM_PLUGIN_VERSION')) {
+            ?>
+            <div class="notice notice-warning">
+                <p>
+                    <strong><?php _e('BP Resume CSV:', 'bp-resume-csv'); ?></strong>
+                    <?php _e('BP Resume Manager is not active. Field detection and import/export functionality will be limited.', 'bp-resume-csv'); ?>
+                    <a href="<?php echo admin_url('plugins.php'); ?>"><?php _e('Activate BP Resume Manager', 'bp-resume-csv'); ?></a>
+                </p>
+            </div>
+            <?php
+            return;
+        }
+        
+        // Check if there are resume fields configured
+        $bprm_settings = get_option('bprm_resume_settings');
+        $grp_args = get_option('bprm_groups_settings');
+        
+        if (empty($bprm_settings) || empty($grp_args)) {
+            ?>
+            <div class="notice notice-info">
+                <p>
+                    <strong><?php _e('BP Resume CSV:', 'bp-resume-csv'); ?></strong>
+                    <?php _e('No resume fields are currently configured. Users will not be able to import/export data until fields are set up.', 'bp-resume-csv'); ?>
+                    <a href="<?php echo admin_url('admin.php?page=bp_resume_manager'); ?>"><?php _e('Configure Resume Fields', 'bp-resume-csv'); ?></a>
+                </p>
+            </div>
+            <?php
+            return;
+        }
+        
+        // Count available fields
+        $total_fields = 0;
+        $display_fields = 0;
+        
+        foreach ($grp_args as $group_key => $group_info) {
+            if (isset($group_info['resume_display']) && $group_info['resume_display'] === 'yes') {
+                if (isset($bprm_settings[$group_key]) && is_array($bprm_settings[$group_key])) {
+                    foreach ($bprm_settings[$group_key] as $field_key => $field_info) {
+                        if ($field_key !== 'bprm_identifier') {
+                            $total_fields++;
+                            if (isset($field_info['display']) && $field_info['display'] === 'yes') {
+                                $display_fields++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if ($total_fields === 0) {
+            ?>
+            <div class="notice notice-warning">
+                <p>
+                    <strong><?php _e('BP Resume CSV:', 'bp-resume-csv'); ?></strong>
+                    <?php _e('No resume fields are configured for display. Please check your field settings.', 'bp-resume-csv'); ?>
+                    <a href="<?php echo admin_url('admin.php?page=bp_resume_manager&tab=gen_settings'); ?>"><?php _e('Check Field Settings', 'bp-resume-csv'); ?></a>
+                </p>
+            </div>
+            <?php
+        } elseif ($display_fields < $total_fields) {
+            ?>
+            <div class="notice notice-info is-dismissible">
+                <p>
+                    <strong><?php _e('BP Resume CSV:', 'bp-resume-csv'); ?></strong>
+                    <?php printf(__('Found %d total fields, but only %d are set to display. CSV import/export will only include fields marked for display.', 'bp-resume-csv'), $total_fields, $display_fields); ?>
+                    <a href="<?php echo admin_url('admin.php?page=bp_resume_manager&tab=gen_settings'); ?>"><?php _e('Review Settings', 'bp-resume-csv'); ?></a>
+                </p>
+            </div>
+            <?php
+        }
+    }
+    
+    /**
+     * Clear field cache when resume settings are updated
+     */
+    public function clear_field_cache() {
+        wp_cache_delete('bprm_resume_settings', 'options');
+        wp_cache_delete('bprm_groups_settings', 'options');
+        
+        // Clear transients if any
+        delete_transient('bp_resume_csv_fields_cache');
+        
+        // Log cache clearing for debugging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('BP Resume CSV: Cleared field cache due to settings update');
+        }
+    }
+    
+    /**
+     * Handle debug requests
+     */
+    public function handle_debug_requests() {
+        // Only handle debug requests for administrators
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        
+        // Handle field refresh request
+        if (isset($_GET['bprm_refresh_fields']) && wp_verify_nonce($_GET['_wpnonce'], 'bprm_refresh_fields')) {
+            $this->clear_field_cache();
+            
+            wp_redirect(remove_query_arg(array('bprm_refresh_fields', '_wpnonce')));
+            exit;
+        }
+        
+        // Handle debug export request
+        if (isset($_GET['bprm_debug_export']) && wp_verify_nonce($_GET['_wpnonce'], 'bprm_debug_export')) {
+            $this->debug_export();
+            exit;
+        }
+    }
+    
+    /**
+     * AJAX handler for debug fields
+     */
+    public function debug_fields_ajax() {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'bprm_csv_nonce') || !current_user_can('manage_options')) {
+            wp_send_json_error(__('Security check failed', 'bp-resume-csv'));
+        }
+        
+        $user_id = intval($_POST['user_id'] ?? get_current_user_id());
+        
+        if (class_exists('BP_Resume_CSV_Handler_Enhanced')) {
+            $csv_handler = new BP_Resume_CSV_Handler_Enhanced();
+            
+            ob_start();
+            $csv_handler->debug_resume_settings($user_id);
+            $debug_output = ob_get_clean();
+            
+            wp_send_json_success(array(
+                'debug_output' => $debug_output,
+                'fields_count' => count($csv_handler->get_user_resume_fields($user_id))
+            ));
+        } else {
+            wp_send_json_error(__('Enhanced handler not available', 'bp-resume-csv'));
+        }
+    }
+    
+    /**
+     * Debug export function for troubleshooting
+     */
+    private function debug_export() {
+        $user_id = get_current_user_id();
+        
+        if (class_exists('BP_Resume_CSV_Handler_Enhanced')) {
+            $csv_handler = new BP_Resume_CSV_Handler_Enhanced();
+            
+            header('Content-Type: text/plain');
+            header('Content-Disposition: attachment; filename="debug_export_' . date('Y-m-d_H-i-s') . '.txt"');
+            
+            echo "=== BP Resume CSV Debug Export ===\n";
+            echo "Date: " . date('Y-m-d H:i:s') . "\n";
+            echo "User ID: " . $user_id . "\n";
+            echo "Plugin Version: " . BP_RESUME_CSV_VERSION . "\n";
+            echo "BP Resume Manager: " . (defined('BPRM_PLUGIN_VERSION') ? 'v' . BPRM_PLUGIN_VERSION : 'Not active') . "\n\n";
+            
+            $csv_handler->debug_resume_settings($user_id);
         }
     }
     
@@ -370,7 +579,7 @@ function bp_resume_csv_init() {
 bp_resume_csv_init();
 
 /**
- * Additional hooks and filters for integration - REMOVED DUPLICATE CALLS
+ * Additional integration hooks and filters
  */
 
 /**
