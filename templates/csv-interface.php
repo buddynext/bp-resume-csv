@@ -1,10 +1,10 @@
 <?php
 /**
- * Enhanced CSV Interface Template with CSS Fallback
+ * Clean CSV Interface Template
  * 
  * File: templates/csv-interface-enhanced.php
  * 
- * This version includes CSS fallback if external file doesn't load
+ * No debug mode or admin backend menus
  */
 
 // Exit if accessed directly
@@ -29,9 +29,6 @@ foreach ($available_fields as $fields) {
     $total_fields += count($fields);
 }
 
-// Debug mode check
-$debug_mode = isset($_GET['csv_debug']) && current_user_can('manage_options');
-
 // Check if enhanced CSS is loaded, if not, use inline styles
 $enhanced_css_path = BP_RESUME_CSV_PLUGIN_PATH . 'assets/css/csv-style-enhanced.css';
 $use_inline_css = !file_exists($enhanced_css_path) || !wp_style_is('bp-resume-csv-style-enhanced', 'enqueued');
@@ -45,63 +42,8 @@ if ($use_inline_css) {
 }
 ?>
 
-<!-- CSS Loading Debug Info for Admins -->
-<?php if ($debug_mode): ?>
-<div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 10px 0; border-radius: 4px;">
-    <strong>CSS Debug Info:</strong><br>
-    Enhanced CSS Path: <?php echo $enhanced_css_path; ?><br>
-    File Exists: <?php echo file_exists($enhanced_css_path) ? 'Yes' : 'No'; ?><br>
-    CSS Enqueued: <?php echo wp_style_is('bp-resume-csv-style-enhanced', 'enqueued') ? 'Yes' : 'No'; ?><br>
-    Using Inline CSS: <?php echo $use_inline_css ? 'Yes' : 'No'; ?>
-</div>
-<?php endif; ?>
-
 <div class="bp-resume-csv-interface">
     
-    <!-- Debug Information (Admin Only) -->
-    <?php if ($debug_mode): ?>
-    <div class="csv-debug-panel" style="background: #f0f8ff; border: 1px solid #0073aa; padding: 20px; margin-bottom: 20px; border-radius: 8px;">
-        <h3 style="margin-top: 0; color: #0073aa;">🔧 Debug Information</h3>
-        <div style="font-family: monospace; font-size: 12px;">
-            <p><strong>Plugin Status:</strong></p>
-            <ul>
-                <li>BP Resume Manager: <?php echo defined('BPRM_PLUGIN_VERSION') ? '✓ Active (v' . BPRM_PLUGIN_VERSION . ')' : '✗ Not found'; ?></li>
-                <li>CSV Plugin: <?php echo defined('BP_RESUME_CSV_VERSION') ? '✓ Active (v' . BP_RESUME_CSV_VERSION . ')' : '✗ Not found'; ?></li>
-                <li>Enhanced Handler: <?php echo class_exists('BP_Resume_CSV_Handler_Enhanced') ? '✓ Available' : '✗ Not available'; ?></li>
-                <li>User ID: <?php echo $user_id; ?></li>
-                <li>Available Groups: <?php echo count($available_fields); ?></li>
-                <li>Total Fields: <?php echo $total_fields; ?></li>
-            </ul>
-            
-            <?php if (!empty($available_fields)): ?>
-            <details style="margin-top: 15px;">
-                <summary style="cursor: pointer; font-weight: bold;">📋 Field Structure</summary>
-                <div style="margin-top: 10px; background: white; padding: 10px; border-radius: 4px;">
-                    <?php foreach ($available_fields as $group_key => $fields): ?>
-                    <h4 style="margin: 10px 0 5px 0; color: #666;">Group: <?php echo esc_html($group_key); ?> (<?php echo count($fields); ?> fields)</h4>
-                    <ul style="margin: 0 0 15px 20px;">
-                        <?php foreach ($fields as $field_key => $field_info): ?>
-                        <li>
-                            <strong><?php echo esc_html($field_key); ?>:</strong> 
-                            <?php echo esc_html($field_info['title']); ?> 
-                            (<?php echo esc_html($field_info['type']); ?>)
-                            <?php if (isset($field_info['repeater']) && $field_info['repeater'] === 'yes'): ?>
-                                <span style="color: #d63638;">[Repeater]</span>
-                            <?php endif; ?>
-                            <?php if (isset($field_info['required']) && $field_info['required'] === 'yes'): ?>
-                                <span style="color: #d63638;">[Required]</span>
-                            <?php endif; ?>
-                        </li>
-                        <?php endforeach; ?>
-                    </ul>
-                    <?php endforeach; ?>
-                </div>
-            </details>
-            <?php endif; ?>
-        </div>
-    </div>
-    <?php endif; ?>
-
     <!-- Header -->
     <div class="csv-interface-header">
         <div class="csv-header-content">
@@ -297,33 +239,12 @@ if ($use_inline_css) {
     </div>
     <?php endif; ?>
     
-    <!-- Footer -->
-    <div class="csv-interface-footer">
-        <div class="footer-links">
-            <a href="https://docs.wbcomdesigns.com/" target="_blank"><?php _e('Documentation', 'bp-resume-csv'); ?></a>
-            <a href="https://wbcomdesigns.com/support/" target="_blank"><?php _e('Support', 'bp-resume-csv'); ?></a>
-            <?php if (current_user_can('manage_options')): ?>
-            <a href="<?php echo add_query_arg('csv_debug', '1'); ?>"><?php _e('Debug Mode', 'bp-resume-csv'); ?></a>
-            <?php endif; ?>
-        </div>
-        <div class="footer-info">
-            <small>
-                <?php printf(__('BP Resume CSV v%s', 'bp-resume-csv'), BP_RESUME_CSV_VERSION); ?>
-                <?php if (class_exists('BP_Resume_CSV_Handler_Enhanced')): ?>
-                | <span style="color: #3b82f6;">✨ Enhanced Mode</span>
-                <?php endif; ?>
-            </small>
-        </div>
-    </div>
-    
 </div>
 
 <!-- Minimal Essential CSS (Fallback) -->
 <?php if ($use_inline_css && !file_exists($enhanced_css_path)): ?>
 <style>
-/* Enhanced CSV Interface - Complete Styles */
-/* File: assets/css/csv-style-enhanced.css */
-
+/* Essential CSS for CSV Interface */
 .bp-resume-csv-interface {
     max-width: 1200px;
     margin: 0 auto;
@@ -331,59 +252,6 @@ if ($use_inline_css) {
     line-height: 1.6;
 }
 
-/* Debug Panel */
-.csv-debug-panel {
-    background: #f0f8ff;
-    border: 1px solid #0073aa;
-    padding: 20px;
-    margin-bottom: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 115, 170, 0.1);
-}
-
-.csv-debug-panel h3 {
-    margin-top: 0;
-    color: #0073aa;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.csv-debug-panel details {
-    margin-top: 15px;
-}
-
-.csv-debug-panel details summary {
-    background: rgba(0, 115, 170, 0.1);
-    padding: 8px 12px;
-    border-radius: 4px;
-    margin-bottom: 5px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: background-color 0.2s ease;
-}
-
-.csv-debug-panel details summary:hover {
-    background: rgba(0, 115, 170, 0.15);
-}
-
-.csv-debug-panel details[open] summary {
-    margin-bottom: 10px;
-    border-bottom: 1px solid rgba(0, 115, 170, 0.2);
-}
-
-.csv-debug-panel ul {
-    margin: 10px 0;
-    padding-left: 20px;
-}
-
-.csv-debug-panel li {
-    margin-bottom: 5px;
-    font-family: monospace;
-    font-size: 12px;
-}
-
-/* Header Section */
 .csv-interface-header {
     text-align: center;
     margin-bottom: 40px;
@@ -392,24 +260,6 @@ if ($use_inline_css) {
     border-radius: 12px;
     color: white;
     box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
-    position: relative;
-    overflow: hidden;
-}
-
-.csv-interface-header::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="1" fill="white" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
-    pointer-events: none;
-}
-
-.csv-header-content {
-    position: relative;
-    z-index: 1;
 }
 
 .csv-header-content h2 {
@@ -429,15 +279,12 @@ if ($use_inline_css) {
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-/* Statistics Grid */
 .csv-stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 20px;
     max-width: 500px;
     margin: 0 auto;
-    position: relative;
-    z-index: 1;
 }
 
 .csv-stat-item {
@@ -447,7 +294,7 @@ if ($use_inline_css) {
     border-radius: 8px;
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.2);
-    transition: transform 0.2s ease, background-color 0.2s ease;
+    transition: transform 0.2s ease;
 }
 
 .csv-stat-item:hover {
@@ -470,99 +317,6 @@ if ($use_inline_css) {
     letter-spacing: 0.5px;
 }
 
-/* Admin Actions */
-.csv-admin-actions {
-    text-align: center;
-    margin-top: 20px;
-    position: relative;
-    z-index: 1;
-}
-
-.csv-admin-actions .button {
-    color: white !important;
-    background: rgba(255, 255, 255, 0.2) !important;
-    border: 1px solid rgba(255, 255, 255, 0.3) !important;
-    transition: all 0.2s ease;
-    text-decoration: none;
-}
-
-.csv-admin-actions .button:hover {
-    background: rgba(255, 255, 255, 0.3) !important;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-}
-
-/* Messages Container */
-.csv-messages-container {
-    margin: 20px 0;
-}
-
-.csv-message {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 15px 20px;
-    border-radius: 8px;
-    margin-bottom: 10px;
-    position: relative;
-    border-left: 4px solid;
-    animation: slideIn 0.3s ease-out;
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.csv-message.success {
-    background: #f0fdf4;
-    border-left-color: #22c55e;
-    color: #166534;
-}
-
-.csv-message.error {
-    background: #fef2f2;
-    border-left-color: #ef4444;
-    color: #dc2626;
-}
-
-.csv-message.info {
-    background: #eff6ff;
-    border-left-color: #3b82f6;
-    color: #1e40af;
-}
-
-.message-dismiss {
-    position: absolute;
-    right: 15px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: none;
-    border: none;
-    cursor: pointer;
-    opacity: 0.6;
-    padding: 5px;
-    border-radius: 4px;
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.message-dismiss:hover {
-    opacity: 1;
-    background: rgba(0, 0, 0, 0.1);
-}
-
-/* Section Styling */
 .csv-section {
     background: white;
     border-radius: 12px;
@@ -570,15 +324,6 @@ if ($use_inline_css) {
     margin-bottom: 30px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
     border: 1px solid #e5e7eb;
-    transition: box-shadow 0.2s ease;
-}
-
-.csv-section:hover {
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-}
-
-.section-header {
-    margin-bottom: 25px;
 }
 
 .section-header h3 {
@@ -590,47 +335,12 @@ if ($use_inline_css) {
     gap: 10px;
 }
 
-.section-icon {
-    font-size: 20px;
-}
-
 .section-header p {
     margin: 0;
     color: #6b7280;
     font-size: 16px;
 }
 
-/* Enhanced Features */
-.enhanced-features {
-    margin-top: 10px;
-    padding: 10px 15px;
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
-    border-radius: 6px;
-    border: 1px solid rgba(102, 126, 234, 0.2);
-}
-
-.enhanced-features small {
-    display: block;
-    margin-top: 5px;
-    color: #6b7280;
-    font-style: italic;
-}
-
-.enhanced-badge {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 3px 8px;
-    border-radius: 12px;
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    display: inline-block;
-    margin-left: 8px;
-    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
-}
-
-/* Export Options */
 .export-options {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
@@ -690,7 +400,19 @@ if ($use_inline_css) {
     font-weight: 500;
 }
 
-/* Buttons */
+.enhanced-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: inline-block;
+    margin-left: 8px;
+}
+
 .csv-button {
     padding: 12px 24px;
     border: none;
@@ -712,10 +434,6 @@ if ($use_inline_css) {
 .csv-button:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
-.csv-button:active {
-    transform: translateY(0);
 }
 
 .csv-button-primary {
@@ -753,38 +471,6 @@ if ($use_inline_css) {
     min-width: 180px;
 }
 
-.button-icon {
-    font-size: 16px;
-}
-
-/* Loading states */
-.csv-button.processing {
-    position: relative;
-    overflow: hidden;
-    opacity: 0.8;
-    pointer-events: none;
-}
-
-.csv-button.processing::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    right: 15px;
-    width: 16px;
-    height: 16px;
-    margin-top: -8px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top: 2px solid white;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* Import Notice */
 .import-notice {
     display: flex;
     gap: 15px;
@@ -813,11 +499,6 @@ if ($use_inline_css) {
     line-height: 1.5;
 }
 
-/* File Upload */
-.file-upload-section {
-    margin-bottom: 25px;
-}
-
 .file-drop-zone {
     border: 2px dashed #d1d5db;
     border-radius: 8px;
@@ -825,7 +506,6 @@ if ($use_inline_css) {
     text-align: center;
     background: #f9fafb;
     transition: all 0.3s ease;
-    position: relative;
     min-height: 200px;
     display: flex;
     align-items: center;
@@ -921,13 +601,11 @@ if ($use_inline_css) {
     transform: scale(1.1);
 }
 
-/* Import Actions */
 .import-actions {
     text-align: center;
     margin-top: 25px;
 }
 
-/* Fields Information */
 .fields-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -956,15 +634,6 @@ if ($use_inline_css) {
     justify-content: space-between;
     padding-bottom: 10px;
     border-bottom: 1px solid #e5e7eb;
-}
-
-.field-count {
-    font-size: 12px;
-    color: #6b7280;
-    font-weight: normal;
-    background: #e5e7eb;
-    padding: 2px 8px;
-    border-radius: 12px;
 }
 
 .field-list {
@@ -1029,7 +698,6 @@ if ($use_inline_css) {
     color: #d97706;
 }
 
-/* No Fields Message */
 .csv-no-fields-message {
     text-align: center;
     padding: 60px 20px;
@@ -1092,52 +760,6 @@ if ($use_inline_css) {
     text-decoration: underline;
 }
 
-/* Progress Indicators */
-.csv-progress {
-    width: 100%;
-    height: 6px;
-    background: #e1e5e9;
-    border-radius: 3px;
-    overflow: hidden;
-    margin: 15px 0;
-    position: relative;
-}
-
-.progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #3b82f6, #1d4ed8);
-    width: 0%;
-    transition: width 0.3s ease;
-    border-radius: 3px;
-}
-
-.progress-bar {
-    width: 100%;
-    height: 4px;
-    background: #e1e5e9;
-    border-radius: 2px;
-    overflow: hidden;
-    margin: 10px 0;
-}
-
-.progress-bar-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #3b82f6, #1d4ed8);
-    width: 0%;
-    transition: width 0.3s ease;
-    border-radius: 2px;
-}
-
-.progress-text {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 8px;
-    font-size: 14px;
-    color: #6b7280;
-}
-
-/* Footer */
 .csv-interface-footer {
     text-align: center;
     padding: 30px 20px;
@@ -1175,6 +797,75 @@ if ($use_inline_css) {
     text-align: center;
     opacity: 0.7;
     font-size: 13px;
+}
+
+.csv-messages-container {
+    margin: 20px 0;
+}
+
+.csv-message {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px 20px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    position: relative;
+    border-left: 4px solid;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.csv-message.success {
+    background: #f0fdf4;
+    border-left-color: #22c55e;
+    color: #166534;
+}
+
+.csv-message.error {
+    background: #fef2f2;
+    border-left-color: #ef4444;
+    color: #dc2626;
+}
+
+.csv-message.info {
+    background: #eff6ff;
+    border-left-color: #3b82f6;
+    color: #1e40af;
+}
+
+.message-dismiss {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    opacity: 0.6;
+    padding: 5px;
+    border-radius: 4px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.message-dismiss:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.1);
 }
 
 /* Responsive Design */
@@ -1267,186 +958,6 @@ if ($use_inline_css) {
         margin: 5px 0 0 0;
         text-align: center;
         width: fit-content;
-    }
-    
-    .csv-debug-panel {
-        padding: 15px;
-        font-size: 12px;
-    }
-    
-    .csv-debug-panel h3 {
-        font-size: 16px;
-    }
-}
-
-@media (max-width: 480px) {
-    .csv-interface-header {
-        padding: 20px 10px;
-    }
-    
-    .csv-header-content h2 {
-        font-size: 20px;
-    }
-    
-    .csv-description {
-        font-size: 14px;
-    }
-    
-    .csv-section {
-        padding: 15px 10px;
-    }
-    
-    .section-header h3 {
-        font-size: 20px;
-    }
-    
-    .csv-stat-item {
-        padding: 15px;
-    }
-    
-    .stat-number {
-        font-size: 24px;
-    }
-    
-    .export-option {
-        padding: 15px;
-    }
-    
-    .file-drop-zone {
-        padding: 20px 10px;
-        min-height: 140px;
-    }
-    
-    .file-selected-info {
-        padding: 15px;
-        gap: 10px;
-    }
-    
-    .selected-file-icon {
-        font-size: 24px;
-    }
-}
-
-/* Print Styles */
-@media print {
-    .csv-debug-panel,
-    .csv-button,
-    .footer-links,
-    .file-upload-section,
-    .import-actions {
-        display: none;
-    }
-    
-    .bp-resume-csv-interface {
-        max-width: none;
-        font-size: 12px;
-    }
-    
-    .csv-interface-header {
-        background: none !important;
-        color: black !important;
-        box-shadow: none;
-        border: 1px solid #ccc;
-    }
-    
-    .csv-section {
-        box-shadow: none;
-        border: 1px solid #ccc;
-        break-inside: avoid;
-    }
-}
-
-/* Dark Mode Support */
-@media (prefers-color-scheme: dark) {
-    .csv-section {
-        background: #1f2937;
-        border-color: #374151;
-        color: #f9fafb;
-    }
-    
-    .section-header h3 {
-        color: #f9fafb;
-    }
-    
-    .section-header p {
-        color: #d1d5db;
-    }
-    
-    .field-group {
-        background: #374151;
-        border-color: #4b5563;
-    }
-    
-    .group-title {
-        color: #f9fafb;
-        border-color: #4b5563;
-    }
-    
-    .field-name {
-        color: #f9fafb;
-    }
-    
-    .field-type {
-        background: #4b5563;
-        color: #d1d5db;
-    }
-    
-    .csv-interface-footer {
-        background: #1f2937;
-        border-color: #374151;
-    }
-    
-    .footer-links a {
-        color: #d1d5db;
-    }
-    
-    .footer-links a:hover {
-        color: #60a5fa;
-        background: #374151;
-    }
-}
-
-/* Accessibility Improvements */
-.csv-button:focus,
-.file-remove:focus,
-input:focus,
-button:focus {
-    outline: 2px solid #3b82f6;
-    outline-offset: 2px;
-}
-
-.screen-reader-text {
-    clip: rect(1px, 1px, 1px, 1px);
-    position: absolute !important;
-    height: 1px;
-    width: 1px;
-    overflow: hidden;
-}
-
-/* High Contrast Mode */
-@media (prefers-contrast: high) {
-    .csv-section {
-        border-width: 2px;
-        border-color: #000;
-    }
-    
-    .csv-button {
-        border: 2px solid #000;
-    }
-    
-    .field-badge {
-        border: 1px solid #000;
-    }
-}
-
-/* Reduced Motion */
-@media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
     }
 }
 </style>
