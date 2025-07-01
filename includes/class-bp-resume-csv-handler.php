@@ -443,7 +443,8 @@ class BP_Resume_CSV_Handler {
             'url' => 'https://example.com',
             'calender_field' => date('Y-m-d'),
             'year_dropdown' => date('Y'),
-            'place_autocomplete' => 'New York, NY, USA'
+            'place_autocomplete' => 'New York, NY, USA',
+            'text_oembed' => 'https://www.youtube.com/watch?v=example'
         );
         
         if (isset($sample_values[$field_type])) {
@@ -469,37 +470,23 @@ class BP_Resume_CSV_Handler {
         if (ob_get_level()) {
             ob_end_clean();
         }
-        
+    
         header('Content-Type: text/csv; charset=UTF-8');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         header('Pragma: no-cache');
         header('Expires: 0');
         header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
-        
+    
         $output = fopen('php://output', 'w');
-        fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
-        
-        if ($include_instructions) {
-            $instructions = array(
-                '# Resume Data Import Template',
-                '# IMPORTANT: All columns are required for successful import',
-                '# Fill in your data in the field_value column only',
-                '# Do NOT modify other columns',
-                ''
-            );
-            
-            foreach ($instructions as $instruction) {
-                fputcsv($output, array($instruction));
-            }
-        }
-        
+        fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF)); // UTF-8 BOM for Excel compatibility
+    
         fputcsv($output, $csv_data['headers']);
-        
+    
         $rows_key = $include_instructions ? 'sample_rows' : 'data_rows';
         foreach ($csv_data[$rows_key] as $row) {
             fputcsv($output, $row);
         }
-        
+    
         fclose($output);
         exit;
     }
